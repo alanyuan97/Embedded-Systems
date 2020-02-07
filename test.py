@@ -1,13 +1,12 @@
-#! /usr/bin/python3
-import smbus
+#!/usr/bin/env python3
 
-bus = smbus.SMBus(1)
-bus_addr = 0x49
+from gpiozero import LED
+from time import sleep
 
-try:
-    while (True):
-        data = bus.read_byte(bus_addr)
-        print(f"Data received: {data}")
-except KeyboardInterrupt:
-    bus.close()
-    quit()
+led = LED(22)
+
+while True:
+    led.on()
+    sleep(0.2)
+    led.off()
+    sleep(0.2)
