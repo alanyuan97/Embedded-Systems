@@ -1,3 +1,4 @@
+
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -41,7 +42,6 @@ line-height:340%;
         setTimeout(MQTTconnect, reconnectTimeout);
         }
 		function onMessageArrived(r_message){
-      // Evaluate if data input is matched with what we expect and print corrsponding output
       if (r_message.payloadString.trim() === '"good"'.trim()){
         out_msg="This apple is good 🌞 🌞 🌞"+"<br>";
         //changeHeadingBg('green');
@@ -49,6 +49,7 @@ line-height:340%;
 
       else if (r_message.payloadString.trim() === '"bad"'.trim()){
         out_msg="This Apple is bad 🌚 🌚 🌚"+"<br>";
+        console.log("hihihi");
         //changeHeadingBg('red');
       }
 
@@ -60,63 +61,88 @@ line-height:340%;
         console.log(typeof "good");
 
 
-
+      //onsole.log(r_message.payloadString)
+      //console.log(r_message.payloadString == "good")
+      //if (r_message.payloadString.equals("good") == true){
     }
 
-
+		//out_msg=out_msg+"Message received Topic "+r_message.destinationName;
+		//console.log("Message received ",r_message.payloadString);
 		console.log(out_msg);
 		document.getElementById("messages").innerHTML =out_msg;
 		}
 	function onConnected(recon,url){
-	console.log(" in onConnected " +reconn);
+	    console.log(" in onConnected " +reconn);
 	}
-
 	function onConnect() {
-	  // Automatically subscribe to topic specified
-	document.getElementById("messages").innerHTML ="Welcome! Please enter your employee number for verification purpose "; //print on screen
-	connected_flag=1
-	document.getElementById("status").innerHTML = "Connected";
-	console.log("on Connect "+connected_flag);
+	  // Once a connection has been made, make a subscription and send a message.
+        document.getElementById("messages").innerHTML ="Welcome! Please enter your employee number for verification purpose "; //print on screen
+        connected_flag=1
+        document.getElementById("status").innerHTML = "Connected";
+        console.log("on Connect "+connected_flag);
 
-	mqtt.subscribe("IC.embedded/FatDuck/#");
+        mqtt.subscribe("IC.embedded/FatDuck/#");
 
+	//message = new Paho.MQTT.Message("Hello World");
+
+	//mqtt.send(message);
 	  }
 
-  function MQTTconnect() {
-  console.log("connecting to "+ host +" "+ port);
 
-	mqtt = new Paho.MQTT.Client(host,port,"fat duck");
 
+
+
+    function MQTTconnect() {
+        console.log("connecting to "+ host +" "+ port);
+
+        mqtt = new Paho.MQTT.Client(host,port,"fat duck");
 	//document.write("connecting to "+ host);
+        var options = {
+            timeout: 3,
+            onSuccess: onConnect,
+            onFailure: onFailure,
 
-  //call back functions are below.
-	var options = {
-        timeout: 3,
-		onSuccess: onConnect,
-		onFailure: onFailure,
+        };
+        mqtt.onConnectionLost = onConnectionLost;
+        mqtt.onMessageArrived = onMessageArrived;
+		mqtt.onConnected = onConnected;
 
-     };
-
-  mqtt.onConnectionLost = onConnectionLost;
-  mqtt.onMessageArrived = onMessageArrived;
-  mqtt.onConnected = onConnected;
-  mqtt.connect(options);
-	return false;
-
-
+        mqtt.connect(options);
+        return false;
 	}
 
 	function send_message(){
-    console.log("inside send");
+        console.log("inside send");
 		document.getElementById("messages").innerHTML ="";
 		if (connected_flag==0){
-		out_msg="<b>Not Connected so can't send</b>"
-		console.log(out_msg);
-		document.getElementById("messages").innerHTML = out_msg;
-		return false;
+            out_msg="<b>Not Connected so can't send</b>"
+            console.log(out_msg);
+            document.getElementById("messages").innerHTML = out_msg;
+            return false;
 		}
+		var msg = document.forms["smessage"]["message"].value;
+		console.log(msg);
 
-  }
+		var topic = document.forms["smessage"]["Ptopic"].value
+    msg = msg + " related to topic "+topic;
+		message = new Paho.MQTT.Message(msg);
+		// if (topic=="")
+        //     message = message + " from no topic";
+		// 	//message.destinationName = "test-topic"
+		// else
+		// 	message = message + " from " +topic;
+        message.destinationName = "IC.embedded/FatDuck/web";
+        message.qos = 2;
+        // message.destinationName = "asd/1";
+        console.log(message.destinationName);
+		mqtt.send(message);
+		return false;//body - html script and structure , while head is function and javascript(被script包夹)
+	}
+  function changeHeadingBg(color){
+        cnonsole.log("before")
+        document.getElementById("messages").style.background = color;
+        cnonsole.log("inside")
+    }
 
 
     </script>
@@ -126,10 +152,10 @@ line-height:340%;
     <h1><center>🍎🍎🍎 Apple Pro Real-time Data Display 🍎🍎🍎<center></h1>
 
 	    <script type = "text/javascript">
+//ll form name is the name of variable
 
 </script>
 	<script>
-  // where programame starts
 	var connected_flag=0
 	var mqtt;
   var reconnectTimeout = 2000;
@@ -137,8 +163,6 @@ line-height:340%;
 	var port=8080;
   MQTTconnect();
 
-
-// below are forms that can be triggered when certain actions are performed
 	</script>
 
 <div id="status">Connection Status: Not Connected</div>
@@ -152,10 +176,10 @@ Password: <input type="text" name="server"><br><br>
 </form>
 
 <hr>
-  <form name="smessage" action="" onsubmit="return send_message()">
+  <form name="smessage" action="">
 Aditional Comment: <input type="text" name="message"><br><br>
 Related Area:   <input type="text" name="Ptopic"><br><br>
-<input type="submit" value="Submit">
+<input type="button" value="Submit" onclick="send_message()">
 </form>
 <br>
 Messages:<p id="messages"></p>
