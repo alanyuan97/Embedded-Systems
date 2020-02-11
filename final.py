@@ -105,16 +105,16 @@ def start_reading():
     client.loop_stop()
     index=0 #
     counter=0
-    threshold=150
+    threshold=200
 
     init() # setup RGB  & distance sensor
     set_gain(0) # RGB gain to 0
     start_time = time.time() 
     reds=[]
     diss=[]
+    lblue.blink()
     for _ in range(10):
         # Enable led blink
-        lblue.blink()
         rgbdata = read_rgb_data(reg_Data)
         disdata = read_dis_data(VL53L0X_REG_RESULT_RANGE_STATUS)
 
@@ -137,7 +137,6 @@ def start_reading():
         # Sync time with motor
         time.sleep(0.9)
         # Disable blink blue
-    lblue.off()
 
     amp_dis = np.multiply(reds,diss)
     print(amp_dis)
@@ -150,6 +149,7 @@ def start_reading():
     print(red_array.astype(int))
     red_int= red_array.astype(int)
     print(len(red_int[red_int>threshold]))
+    lblue.off()
     if (len(red_int[red_int>threshold])>=6):
         lgreen.on()
         y=json.dumps("good")

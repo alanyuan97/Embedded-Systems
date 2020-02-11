@@ -25,18 +25,18 @@ def start_motor():
                     else pass
     """
     try:
-        BP.offset_motor_encoder(BP.PORT_C, BP.get_motor_encoder(BP.PORT_C)) # reset encoder D
+        BP.offset_motor_encoder(BP.PORT_B, BP.get_motor_encoder(BP.PORT_B)) # reset encoder D
     except IOError as error:
         print(error)
-    BP.set_motor_dps(BP.PORT_C, target)
-    print(("Motor C Target Degrees Per Second: %d" % target), "  Motor C Status: ", BP.get_motor_status(BP.PORT_C))
+    BP.set_motor_dps(BP.PORT_B, target)
+    print(("Motor C Target Degrees Per Second: %d" % target), "  Motor C Status: ", BP.get_motor_status(BP.PORT_B))
 
 def end_motor():
-    BP.set_motor_dps(BP.PORT_C, 0)
+    BP.set_motor_dps(BP.PORT_B, 0)
 #************************************************ MAIN ******************************************************
 
 BP = brickpi3.BrickPi3() # Create an instance of the BrickPi3 class. BP will be the BrickPi3 object.
-target = 40
+target = 100 # was 40
 port = 8080
 server = "test.mosquitto.org"
 client = mqtt.Client()
