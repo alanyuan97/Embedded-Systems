@@ -115,8 +115,9 @@ if (success!=0):
 
 index=0
 try:
-    # set_gain(0b11)
+
     init()
+    set_gain(0b11)
     while(True):
         
 
