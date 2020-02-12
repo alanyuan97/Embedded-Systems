@@ -37,37 +37,30 @@ line-height:340%;
 	connected_flag=0;
 	}
 	function onFailure(message) {
+    //print on console if failed and reconnect
 		console.log("Failed");
 		document.getElementById("messages").innerHTML = "Connection Failed- Retrying";
         setTimeout(MQTTconnect, reconnectTimeout);
         }
 		function onMessageArrived(r_message){
-      if (r_message.payloadString.trim() === '"good"'.trim()){
+      //identify message type and perform corresponding actions
+      if (r_message.payloadString.trim() === '"good"'){
         out_msg="This apple is good 🌞 🌞 🌞"+"<br>";
-        //changeHeadingBg('green');
       }
 
-      else if (r_message.payloadString.trim() === '"bad"'.trim()){
+      else if (r_message.payloadString.trim() === '"bad"'){
         out_msg="This Apple is bad 🌚 🌚 🌚"+"<br>";
         console.log("hihihi");
-        //changeHeadingBg('red');
       }
 
-      else{
+      else if (r_message.payloadString.trim() != "stop"){
+
         out_msg="Please wait while sensor scanning 📸 📸 📸"+"<br>";
         console.log(r_message.payloadString.trim());
         console.log('"good"'.trim());
         console.log(typeof r_message.payloadString);
         console.log(typeof "good");
-
-
-      //onsole.log(r_message.payloadString)
-      //console.log(r_message.payloadString == "good")
-      //if (r_message.payloadString.equals("good") == true){
     }
-
-		//out_msg=out_msg+"Message received Topic "+r_message.destinationName;
-		//console.log("Message received ",r_message.payloadString);
 		console.log(out_msg);
 		document.getElementById("messages").innerHTML =out_msg;
 		}
@@ -82,10 +75,6 @@ line-height:340%;
         console.log("on Connect "+connected_flag);
 
         mqtt.subscribe("IC.embedded/FatDuck/#");
-
-	//message = new Paho.MQTT.Message("Hello World");
-
-	//mqtt.send(message);
 	  }
 
 
@@ -105,14 +94,14 @@ line-height:340%;
         };
         mqtt.onConnectionLost = onConnectionLost;
         mqtt.onMessageArrived = onMessageArrived;
-		mqtt.onConnected = onConnected;
+		    mqtt.onConnected = onConnected;
 
         mqtt.connect(options);
         return false;
 	}
 
 	function send_message(){
-        console.log("inside send");
+
 		document.getElementById("messages").innerHTML ="";
 		if (connected_flag==0){
             out_msg="<b>Not Connected so can't send</b>"
@@ -122,37 +111,63 @@ line-height:340%;
 		}
 		var msg = document.forms["smessage"]["message"].value;
 		console.log(msg);
-
 		var topic = document.forms["smessage"]["Ptopic"].value
     msg = msg + " related to topic "+topic;
 		message = new Paho.MQTT.Message(msg);
-		// if (topic=="")
-        //     message = message + " from no topic";
-		// 	//message.destinationName = "test-topic"
-		// else
-		// 	message = message + " from " +topic;
-        message.destinationName = "IC.embedded/FatDuck/web";
+        message.destinationName = "IC.embedded/FatDuck/display";
         message.qos = 2;
-        // message.destinationName = "asd/1";
         console.log(message.destinationName);
 		mqtt.send(message);
 		return false;//body - html script and structure , while head is function and javascript(被script包夹)
 	}
-  function changeHeadingBg(color){
-        cnonsole.log("before")
-        document.getElementById("messages").style.background = color;
-        cnonsole.log("inside")
-    }
 
+  function send_start_message(){
+    // triggered by "start" button and send signal to MQTT server and trigger mechanical arm
+    document.getElementById("messages").innerHTML ="";
+		if (connected_flag==0){
+            out_msg="<b>Not Connected so can't send</b>"
+            console.log(out_msg);
+            document.getElementById("messages").innerHTML = out_msg;
+            return false;
+		}
+    var msg = "start";
+		message = new Paho.MQTT.Message(msg);
+
+        message.destinationName = "IC.embedded/FatDuck/motor";
+        message.qos = 2;
+        console.log(message.destinationName);
+		mqtt.send(message);
+		return false;
+
+  }
+
+  function send_stop_message(){
+      // triggered by "stop" button and send signal to MQTT server and stop mechanical arm
+    document.getElementById("messages").innerHTML ="";
+    if (connected_flag==0){
+            out_msg="<b>Not Connected so can't send</b>"
+            console.log(out_msg);
+            document.getElementById("messages").innerHTML = out_msg;
+            return false;
+    }
+    var msg = "stop";
+    message = new Paho.MQTT.Message(msg);
+
+        message.destinationName = "IC.embedded/FatDuck/motor";
+        message.qos = 2;
+        console.log(message.destinationName);
+    mqtt.send(message);
+    return false;
+
+  }
 
     </script>
-
   </head>
   <body>
-    <h1><center>🍎🍎🍎 Apple Pro Real-time Data Display 🍎🍎🍎<center></h1>
+    <h1><center style="color:blue;">🍎🍎🍎 Apple Pro Real-time Data Display 🍎🍎🍎<center></h1>
 
 	    <script type = "text/javascript">
-//ll form name is the name of variable
+
 
 </script>
 	<script>
@@ -175,13 +190,28 @@ Password: <input type="text" name="server"><br><br>
 <input type="submit" value="Login">
 </form>
 
+
+
 <hr>
   <form name="smessage" action="">
 Aditional Comment: <input type="text" name="message"><br><br>
 Related Area:   <input type="text" name="Ptopic"><br><br>
 <input type="button" value="Submit" onclick="send_message()">
 </form>
+
+
+<hr><br>
+  <form name="start_button" action=""> Try to press me :)
+<input type="button" value="Start" onclick="send_start_message()">
+</form>
 <br>
+
+  <form name="stop_button" action=""> Do not press me :(
+<input type="button" value="Stop" onclick="send_stop_message()">
+</form>
+<br>
+<hr>
+
 Messages:<p id="messages"></p>
 
   </body>
