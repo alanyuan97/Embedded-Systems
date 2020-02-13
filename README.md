@@ -1,2 +1,4 @@
 # Embedded-Systems
-Workspace work Embedded Systems coursework
+Workspace for Embedded Systems coursework
+
+
