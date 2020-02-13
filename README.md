@@ -1,7 +1,7 @@
 # Embedded-Systems
 Workspace for Embedded Systems coursework
 
-## Courswork1: Internet of Things device using python
+## Coursework1: Internet of Things device using python
 
 Final Submission code:
 
@@ -9,4 +9,4 @@ Final Submission code:
 
 [LEGO Arm](./coursework1/src/lego_sub.py)
 
-Apple Pro: 
+Link to website: https://viannananac.wixsite.com/fat-duck
