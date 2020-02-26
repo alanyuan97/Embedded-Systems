@@ -1,4 +1,5 @@
 #include "mbed.h"
+#include "hash/SHA256.h"
 
 //Photointerrupter input pins
 #define I1pin D3
@@ -49,6 +50,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 
 //Phase lead to make motor spin
 const int8_t lead = 2;  //2 for forwards, -2 for backwards
+int8_t orState = 0;
 
 //Status LED
 DigitalOut led1(LED1);
@@ -90,7 +92,7 @@ void motorOut(int8_t driveState){
     if (driveOut & 0x08) L2H = 0;
     if (driveOut & 0x10) L3L = 1;
     if (driveOut & 0x20) L3H = 0;
-    }
+}
     
     //Convert photointerrupter inputs to a rotor state
 inline int8_t readRotorState(){
@@ -98,7 +100,7 @@ inline int8_t readRotorState(){
     }
 
 //Basic synchronisation routine    
-int8_t motorHome() {
+int8_t motorHome(){
     //Put the motor in drive state 0 and wait for it to stabilise
     motorOut(0);
     wait(2.0);
@@ -106,13 +108,51 @@ int8_t motorHome() {
     //Get the rotor state
     return readRotorState();
 }
+
+
+// ISR to handle the updating of the motor position
+void motorISR(){
+    static int8_t oldRotorState = 0;
+    int8_t rotorState = readRotorState();
+
+    int8_t tmpState = (rotorState-orState+lead+6)%6;
+
+    motorOut(tmpState);
+    if (rotorState == 4 && oldRotorState == 3) TP1 = !TP1;
+    // if(rotorState - oldRotorState == 5) motorPosition--;
+    // else if (rotorState - oldRotorState == -5) motorPosition++;
+    // else motorPosition += (rotorState - oldRotorState);
+    oldRotorState = rotorState;
+}
+
+void CheckState(){
+        I1.rise(&motorISR);
+        I2.rise(&motorISR);
+        I3.rise(&motorISR);
+        I1.fall(&motorISR);
+        I2.fall(&motorISR);
+        I3.fall(&motorISR);
+}
+
+void computeHash(){
+    SHA256::computeHash(hash, sequence, 64);
+    if ((hash[0]==0) && (hash[1]==0)) {
+        // TODO print NONCE, *nonce first -> hex()
+        // pc.printf();
+    }
+}
     
 //Main
 int main() {
-    int8_t orState = 0;    //Rotot offset at motor state 0
-    int8_t intState = 0;
-    int8_t intStateOld = 0;
-    
+    // int8_t orState = 0;    //Rotot offset at motor state 0
+    // int8_t intState = 0;
+    // int8_t intStateOld = 0;
+    uint8_t sequence[] = {0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64, 0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73, 0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E, 0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20, 0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20, 0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+    uint64_t* key = (uint64_t*)&sequence[48]; 
+    uint64_t* nonce = (uint64_t*)&sequence[56]; 
+    uint8_t hash[32];
+    volatile uint32_t hash_counter=0;
+
     const int32_t PWM_PRD = 2500;
     MotorPWM.period_us(PWM_PRD);
     MotorPWM.pulsewidth_us(PWM_PRD);
@@ -128,15 +168,20 @@ int main() {
     
     MotorPWM.pulsewidth_us(PWM_PRD/2);
     //Poll the rotor state and set the motor outputs accordingly to spin the motor
+    
+    CheckState();
     while (1) {
-        intState = readRotorState();
-        if (intState != intStateOld) {
-            motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
-            if (intState == 4 && intStateOld == 3) TP1 = !TP1;
-            intStateOld = intState;
-            pc.printf("%d\n\r",intState);
-        }
+        // intState = readRotorState();
+        // if (intState != intStateOld) {
+        //     motorOut((intState-orState+lead+6)%6); //+6 to make sure the remainder is positive
+        //     if (intState == 4 && intStateOld == 3) TP1 = !TP1;
+        //     intStateOld = intState;
+        //     pc.printf("%d\n\r",intState);
+        // }
+        computeHash(); 
     }
 }
+
+
 
 
