@@ -1,5 +1,8 @@
 #include "mbed.h"
-#include "hash/SHA256.h"
+#include "./Crypto/hash/SHA256.h"
+#include "rtos.h"
+#include "Thread.h"
+#include "Callback.h"
 
 //Photointerrupter input pins
 #define I1pin D3
@@ -51,7 +54,24 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //Phase lead to make motor spin
 const int8_t lead = 2;  //2 for forwards, -2 for backwards
 int8_t orState = 0;
+volatile uint32_t hash_counter=0;
 
+
+typedef struct{
+    uint32_t data; 
+}message;
+
+Mail<message, 16> mail_box;
+Thread thread;
+
+void putMessage(uint64_t* nonce){
+    message *mail = mail_box.alloc(); 
+    mail->data = *nonce;
+    mail_box.put(mail);
+}
+
+
+Serial pc(SERIAL_TX, SERIAL_RX);
 //Status LED
 DigitalOut led1(LED1);
 
@@ -134,31 +154,46 @@ void CheckState(){
         I3.fall(&motorISR);
 }
 
-void computeHash(){
-    SHA256::computeHash(hash, sequence, 64);
-    if ((hash[0]==0) && (hash[1]==0)) {
-        // TODO print NONCE, *nonce first -> hex()
-        // pc.printf();
-    }
+void CountHash(){
+    hash_counter = 0; 
 }
-    
+
+//void computeHash(){
+//    
+// if .... hash true:
+// -> putMessage()
+//}
+
+// void myprint(){
+// get mail ptr, &ptr, pc.print()
+//}
+
+// thread.start(callback(myprint))
+
+
+// in main:
+//      while(1):
+//          computeHash()
+
+
 //Main
 int main() {
     // int8_t orState = 0;    //Rotot offset at motor state 0
     // int8_t intState = 0;
     // int8_t intStateOld = 0;
+    
     uint8_t sequence[] = {0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64, 0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73, 0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E, 0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20, 0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20, 0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
     uint64_t* key = (uint64_t*)&sequence[48]; 
     uint64_t* nonce = (uint64_t*)&sequence[56]; 
-    uint8_t hash[32];
-    volatile uint32_t hash_counter=0;
+    uint8_t hash1[32];
+    Ticker timing;
+
 
     const int32_t PWM_PRD = 2500;
     MotorPWM.period_us(PWM_PRD);
     MotorPWM.pulsewidth_us(PWM_PRD);
     
     //Initialise the serial port
-    Serial pc(SERIAL_TX, SERIAL_RX);
     pc.printf("Hello\n\r");
     
     //Run the motor synchronisation
@@ -169,7 +204,10 @@ int main() {
     MotorPWM.pulsewidth_us(PWM_PRD/2);
     //Poll the rotor state and set the motor outputs accordingly to spin the motor
     
+    timing.attach(&CountHash, 1.0);
+
     CheckState();
+    thread.start(callback(nonce, putMessage));
     while (1) {
         // intState = readRotorState();
         // if (intState != intStateOld) {
@@ -178,10 +216,27 @@ int main() {
         //     intStateOld = intState;
         //     pc.printf("%d\n\r",intState);
         // }
-        computeHash(); 
+        SHA256::computeHash(hash1, sequence, 64);
+        osEvent evt = mail_box.get();
+        if (evt.status == osEventMail) {
+            pc.printf("hh");
+            if ((hash1[0]==0) && (hash1[1]==0)){
+                pc.printf("aa");
+            message *mail = (message*)evt.value.p;
+            pc.printf("\nnonce: 0x%x\n\r", mail->data);
+            mail_box.free(mail);
+            }
+        }
+
+
+        // if ((hash1[0]==0) && (hash1[1]==0)) {
+        // TODO print NONCE, *nonce first -> hex()
+        // pc.printf("hahahah");
+        // pc.printf("nounce is 0x%x\r\n",*nonce);
+        *nonce = *nonce + 1;
+        hash_counter+=1; 
     }
 }
-
 
 
 
