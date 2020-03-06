@@ -50,6 +50,7 @@ const int8_t driveTable[] = {0x12,0x18,0x09,0x21,0x24,0x06,0x00,0x00};
 const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 const int8_t kp=25;
+const int8_t kd=20;
 const uint32_t YVELMAX=1000;
 //Phase lead to make motor spin
 int8_t lead = -2;  //2 for forwards, -2 for backwards
@@ -67,22 +68,24 @@ bool movement_dir;
 typedef struct{
     uint32_t data;
     double velocity;
+    uint64_t key;
     int typenames; //1 for nounce, 2 for hash rate
 }message;
 
-Mail<message, 16> mail_box;
+Mail<message, 160> mail_box;
 //Thread compute_thread;
 Thread print_thread;
-Thread decode_thread;
+Thread decode_thread(osPriorityNormal,1024);
 Thread motorCtrlT(osPriorityNormal,1024);
 
 Mutex newkey_mutex;
-uint64_t newkey;
+uint64_t newkey = 0;
 Mail<uint8_t, 8> inCharQ;
 volatile double current_velocity =0;
-float target_vel=1000;
-uint32_t target_rot=0;
+double target_vel=100;
+double target_rot=0;
 volatile double y_velocity=0;
+volatile double y_rotation=0;
 
 
 RawSerial pc(SERIAL_TX, SERIAL_RX);
@@ -95,11 +98,11 @@ InterruptIn I2(I2pin);
 InterruptIn I3(I3pin);
 
 //Motor Drive outputs
-PwmOut L1L(L1Lpin);
+DigitalOut L1L(L1Lpin);
 DigitalOut L1H(L1Hpin);
-PwmOut L2L(L2Lpin);
+DigitalOut L2L(L2Lpin);
 DigitalOut L2H(L2Hpin);
-PwmOut L3L(L3Lpin);
+DigitalOut L3L(L3Lpin);
 DigitalOut L3H(L3Hpin);
 
 DigitalOut TP1(TP1pin);
@@ -114,36 +117,43 @@ void motorCtrlFn(){
     motorCtrlTicker.attach_us(&motorCtrlTick,100000); 
     double oldpos=0;
     double newpos=0;
+    double Er = 0; 
+    double d_Er = 0;
+    double p_Er = 0; 
     int32_t vel_counter=0;
+
 
 
     while(1){
         motorCtrlT.signal_wait(0x1); // wait for thread signal
         newpos = (double)motorPosition/6;
-        current_velocity += (double)(newpos-oldpos)*10*6.28; //unit in radians. times 10 because 100ms per call means 0.1s per call
+        current_velocity += (double)(newpos-oldpos); //unit in radians. times 10 because 100ms per call means 0.1s per call
         oldpos = newpos;
         vel_counter++;
 
-        // Print current velocity 
         if (vel_counter == 10){
+            
+            y_velocity = kp*(target_vel-abs(current_velocity));
+             if(y_velocity<0){
+            y_velocity = -1 * y_velocity;
+            lead *= -1; 
+            }
+
+            if (y_velocity>YVELMAX){
+            y_velocity = YVELMAX;
+            }
             message *mail = mail_box.alloc();
             mail->velocity = current_velocity;
             mail->typenames = 4;
             mail_box.put(mail);
-            vel_counter = 0;
             current_velocity = 0;
+            vel_counter = 0;
         }
 
-        y_velocity = kp*(target_vel-current_velocity);
-
-        if(y_velocity<0){
-            y_velocity = -1 * y_velocity;
-            lead *= -1; 
-        }
-
-        if (y_velocity>YVELMAX){
-            y_velocity = YVELMAX;
-        }
+        Er = target_rot - newpos;
+        d_Er = Er - p_Er;
+        y_rotation = kp * Er + kd * d_Er;
+        p_Er = Er; 
     }
 }
 
@@ -151,10 +161,11 @@ void motorCtrlFn(){
 
 
 //Set a given drive state
-void motorOut(int8_t driveState){
+void motorOut(int8_t driveState, double y_velocity1){
 
     //Lookup the output byte from the drive state.
     int8_t driveOut = driveTable[driveState & 0x07];
+    
 
     //Turn off first
     if (~driveOut & 0x01) L1L = 0;
@@ -165,12 +176,22 @@ void motorOut(int8_t driveState){
     if (~driveOut & 0x20) L3H = 1;
 
     //Then turn on
-    if (driveOut & 0x01) L1L.pulsewidth_us(y_velocity);
-    if (driveOut & 0x02) L1H = 0;
-    if (driveOut & 0x04) L2L.pulsewidth_us(y_velocity);
-    if (driveOut & 0x08) L2H = 0;
-    if (driveOut & 0x10) L3L.pulsewidth_us(y_velocity);
-    if (driveOut & 0x20) L3H = 0;
+     if (driveOut & 0x01) L1L=1;
+     if (driveOut & 0x02) L1H = 0;
+     if (driveOut & 0x04)  L2L=1;
+     if (driveOut & 0x08) L2H = 0;
+     if (driveOut & 0x10) L3L=1;
+     if (driveOut & 0x20) L3H = 0;
+    
+   // MotorPWM.write(y_velocity/YVELMAX);
+      MotorPWM.pulsewidth_us(y_velocity);
+    
+//    if (driveOut & 0x01) L1L.pulsewidth_us(y_velocity1);
+//    if (driveOut & 0x02) L1H = 0;
+//    if (driveOut & 0x04)  L2L.pulsewidth_us(y_velocity1);
+//    if (driveOut & 0x08) L2H = 0;
+//    if (driveOut & 0x10) L3L.pulsewidth_us(y_velocity1);
+//    if (driveOut & 0x20) L3H = 0;
 }
 
     //Convert photointerrupter inputs to a rotor state
@@ -181,7 +202,7 @@ inline int8_t readRotorState(){
 //Basic synchronisation routine
 int8_t motorHome(){
     //Put the motor in drive state 0 and wait for it to stabilise
-    motorOut(0);
+    motorOut(0,1000);
     wait(2.0);
 
     //Get the rotor state
@@ -196,7 +217,7 @@ void motorISR(){
 
     int8_t tmpState = (rotorState-orState+lead+6)%6;
 
-    motorOut(tmpState);
+    motorOut(tmpState,y_velocity);
     if (rotorState == 4 && oldRotorState == 3) TP1 = !TP1;
     if(rotorState - oldRotorState == 5) motorPosition--;
     else if (rotorState - oldRotorState == -5) motorPosition++;
@@ -247,6 +268,9 @@ void myprint(){
                 case(4):
                     pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
+                case(5):
+                    pc.printf("\n key found: %llx\n\r", mail->key);
+                    break;
             }
             // pc.printf("\ntype: 0x%d\n\r", mail->typenames);
             // pc.printf("\ndata: 0x%d\n\r", mail->data);
@@ -276,6 +300,15 @@ void serialISR(){
     inCharQ.put(newChar);
 }
 
+void dumpMes(uint64_t keyin){
+    newkey_mutex.lock();
+    message *mail = mail_box.alloc();
+    mail->key = keyin;
+    mail->typenames = 5;
+    mail_box.put(mail);
+    newkey_mutex.unlock();
+}
+
 void decode(){
     pc.attach(&serialISR); 
     while(1) {
@@ -284,12 +317,18 @@ void decode(){
 
         if(*newChar!='\r'){
             infobuffer[counter] = *newChar;
-            counter>17 ? counter =0: counter++;
+            counter>=17 ? counter =0: counter++;
             // continue
+//            pc.printf("\n key: %c\n\r", infobuffer[counter]);
+//            pc.printf("counter %d\n\r", counter);
         }
 
         else{
             infobuffer[counter] =  '\0';
+            int i;
+//            for (i=0;i<=counter;i++){
+//                pc.printf("%c", infobuffer[i]);
+//            }
             switch(infobuffer[0]){
                 // Rotation numbers
                 case('R'):
@@ -297,9 +336,11 @@ void decode(){
                     break;
                 // Key
                 case('K'):
-                    newkey_mutex.lock();
-                    sscanf(infobuffer,"K%x",newkey);
+                    newkey_mutex.lock(); 
+                    sscanf(infobuffer,"K%llx", &newkey);
+                    dumpMes(newkey);
                     newkey_mutex.unlock();
+                    wait(0.1);
                     break;
                 // Velocity
                 case('V'):
@@ -361,8 +402,7 @@ int main() {
         compute();
         *nonce = *nonce + 1;
         hash_counter+=1;
+        //decode(); 
     }
-
-
 }
 
