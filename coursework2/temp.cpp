@@ -66,7 +66,7 @@ int counter = 0;
 bool movement_dir;
 
 typedef struct{
-    uint32_t data;
+    uint64_t data;
     double velocity;
     uint64_t key;
     int typenames; //1 for nounce, 2 for hash rate
@@ -176,22 +176,13 @@ void motorOut(int8_t driveState, double y_velocity1){
     if (~driveOut & 0x20) L3H = 1;
 
     //Then turn on
-     if (driveOut & 0x01) L1L=1;
-     if (driveOut & 0x02) L1H = 0;
-     if (driveOut & 0x04)  L2L=1;
-     if (driveOut & 0x08) L2H = 0;
-     if (driveOut & 0x10) L3L=1;
-     if (driveOut & 0x20) L3H = 0;
-    
-   // MotorPWM.write(y_velocity/YVELMAX);
-      MotorPWM.pulsewidth_us(y_velocity);
-    
-//    if (driveOut & 0x01) L1L.pulsewidth_us(y_velocity1);
-//    if (driveOut & 0x02) L1H = 0;
-//    if (driveOut & 0x04)  L2L.pulsewidth_us(y_velocity1);
-//    if (driveOut & 0x08) L2H = 0;
-//    if (driveOut & 0x10) L3L.pulsewidth_us(y_velocity1);
-//    if (driveOut & 0x20) L3H = 0;
+    if (driveOut & 0x01) L1L=1;
+    if (driveOut & 0x02) L1H = 0;
+    if (driveOut & 0x04)  L2L=1;
+    if (driveOut & 0x08) L2H = 0;
+    if (driveOut & 0x10) L3L=1;
+    if (driveOut & 0x20) L3H = 0;
+    MotorPWM.pulsewidth_us(y_velocity);
 }
 
     //Convert photointerrupter inputs to a rotor state
@@ -300,11 +291,11 @@ void serialISR(){
     inCharQ.put(newChar);
 }
 
-void dumpMes(uint64_t keyin){
+void dumpMes(int type, uint64_t datain){
     newkey_mutex.lock();
     message *mail = mail_box.alloc();
-    mail->key = keyin;
-    mail->typenames = 5;
+    mail->key = datain;
+    mail->typenames = type;
     mail_box.put(mail);
     newkey_mutex.unlock();
 }
@@ -318,33 +309,31 @@ void decode(){
         if(*newChar!='\r'){
             infobuffer[counter] = *newChar;
             counter>=17 ? counter =0: counter++;
-            // continue
-//            pc.printf("\n key: %c\n\r", infobuffer[counter]);
-//            pc.printf("counter %d\n\r", counter);
+        // continue
+        //    pc.printf("\n key: %c\n\r", infobuffer[counter]);
+        //    pc.printf("counter %d\n\r", counter);
         }
 
         else{
             infobuffer[counter] =  '\0';
-            int i;
-//            for (i=0;i<=counter;i++){
-//                pc.printf("%c", infobuffer[i]);
-//            }
             switch(infobuffer[0]){
                 // Rotation numbers
                 case('R'):
-                    sscanf(infobuffer,"R%f",target_rot);
+                    sscanf(infobuffer,"R%f",&target_rot);
+                    // dump the target TODO
                     break;
                 // Key
                 case('K'):
                     newkey_mutex.lock(); 
                     sscanf(infobuffer,"K%llx", &newkey);
-                    dumpMes(newkey);
+                    dumpMes(5,newkey); // type 5
                     newkey_mutex.unlock();
                     wait(0.1);
                     break;
                 // Velocity
                 case('V'):
-                    sscanf(infobuffer,"V%f",target_vel);
+                    sscanf(infobuffer,"V%f",&target_vel);
+                    // dump the target TODO
                     break;
             }
             counter = 0;
