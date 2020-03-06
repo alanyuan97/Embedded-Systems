@@ -72,7 +72,7 @@ typedef struct{
     int typenames; //1 for nounce, 2 for hash rate
 }message;
 
-Mail<message, 160> mail_box;
+Mail<message, 16> mail_box;
 //Thread compute_thread;
 Thread print_thread;
 Thread decode_thread(osPriorityNormal,1024);
