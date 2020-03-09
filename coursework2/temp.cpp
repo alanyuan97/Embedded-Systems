@@ -83,7 +83,7 @@ uint64_t newkey = 0;
 Mail<uint8_t, 8> inCharQ;
 volatile double current_velocity =0;
 double target_vel=30;
-double target_rot=0;
+double target_rot=800;
 volatile float y_velocity=0;
 volatile float y_rotation=0;
 
@@ -130,7 +130,34 @@ void motorCtrlFn(){
         current_velocity += (double)(newpos-oldpos); //unit in radians. times 10 because 100ms per call means 0.1s per call
         oldpos = newpos;
         vel_counter++;
+        
+        Er = target_rot - newpos;
+        d_Er = Er - p_Er;
+        y_rotation = kp * Er + kd * d_Er;
+        p_Er = Er; 
+        
+        if(target_rot == 0){
+                y_rotation = YVELMAX;
+            }
+            else{
+                if (target_rot <= 0){
+                    lead = -2;   
+                }
+                else{
+                    lead = 2;   
+                }
+            }
+            if(y_rotation < 0){
+                
+                y_rotation = abs(y_rotation);
+                }
+            
+            if(y_rotation>YVELMAX){
+                y_rotation = YVELMAX;
+            }
 
+            MotorPWM.write(y_rotation);
+            
         if (vel_counter == 10){
 
             // y_velocity = kp*(target_vel-abs(current_velocity));
@@ -160,37 +187,14 @@ void motorCtrlFn(){
             // vel_counter = 0;
             // }
 
-
-            Er = target_rot - newpos;
-            d_Er = Er - p_Er;
-            y_rotation = kp * Er + kd * d_Er;
-            p_Er = Er; 
-
             message *mail = mail_box.alloc();
-            mail->rotation = y_rotation;
+            mail->velocity = y_rotation;
             mail->typenames = 4;
             mail_box.put(mail);
-
-            if(target_rot == 0){
-                y_rotation = YVELMAX;
-            }
-            else{
-                if (target_rot <= 0){
-                    lead = -2;   
-                }
-                else{
-                    lead = 2;   
-                }
-            }
-            if(y_rotation>YVELMAX){
-                y_rotation = YVELMAX;
-            }
-
-            MotorPWM.write(y_rotation);
-
+            
             current_velocity = 0;
             vel_counter = 0;
-            
+
             }
 
     }
@@ -200,7 +204,7 @@ void motorCtrlFn(){
 
 
 //Set a given drive state
-void motorOut(int8_t driveState, double y_velocity1){
+void motorOut(int8_t driveState){
 
     //Lookup the output byte from the drive state.
     int8_t driveOut = driveTable[driveState & 0x07];
@@ -231,7 +235,7 @@ inline int8_t readRotorState(){
 //Basic synchronisation routine
 int8_t motorHome(){
     //Put the motor in drive state 0 and wait for it to stabilise
-    motorOut(0,1000);
+    motorOut(0);
     wait(2.0);
 
     //Get the rotor state
@@ -246,7 +250,7 @@ void motorISR(){
 
     int8_t tmpState = (rotorState-orState+lead+6)%6;
 
-    motorOut(tmpState,y_velocity);
+    motorOut(tmpState);
     if (rotorState == 4 && oldRotorState == 3) TP1 = !TP1;
     if(rotorState - oldRotorState == 5) motorPosition--;
     else if (rotorState - oldRotorState == -5) motorPosition++;
