@@ -51,7 +51,7 @@ const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 const int8_t kp=25;
 const int8_t kd=20;
-const uint32_t YVELMAX=2000;
+const uint32_t YVELMAX=1.0f;
 //Phase lead to make motor spin
 int8_t lead = -2;  //2 for forwards, -2 for backwards
 int8_t orState = 0;
@@ -84,8 +84,8 @@ Mail<uint8_t, 8> inCharQ;
 volatile double current_velocity =0;
 double target_vel=30;
 double target_rot=0;
-volatile double y_velocity=0;
-volatile double y_rotation=0;
+volatile float y_velocity=0;
+volatile float y_rotation=0;
 
 
 RawSerial pc(SERIAL_TX, SERIAL_RX);
@@ -132,35 +132,67 @@ void motorCtrlFn(){
         vel_counter++;
 
         if (vel_counter == 10){
-            if(target_vel == 0){
-                y_velocity = YVELMAX;
-            }
-            else{
-                if (target_vel <= 0){
-                    lead = -2;   
-                }
-                else{
-                    lead = 2;   
-                }
 
-            y_velocity = kp*(target_vel-abs(current_velocity));
-            MotorPWM.write(y_velocity/0.002);
+            // y_velocity = kp*(target_vel-abs(current_velocity));
 
+            // if(target_vel == 0){
+            //     y_velocity = YVELMAX;
+            // }
+            // else{
+            //     if (target_vel <= 0){
+            //         lead = -2;   
+            //     }
+            //     else{
+            //         lead = 2;   
+            //     }
+
+            // if(y_velocity>YVELMAX){
+            //     y_velocity = YVELMAX;
+            // }
+
+            // MotorPWM.write(y_velocity);
              
-            message *mail = mail_box.alloc();
-            mail->velocity = current_velocity;
-            mail->typenames = 4;
-            mail_box.put(mail);
-            current_velocity = 0;
-            vel_counter = 0;
-            }
+            // message *mail = mail_box.alloc();
+            // mail->velocity = current_velocity;
+            // mail->typenames = 4;
+            // mail_box.put(mail);
+            // current_velocity = 0;
+            // vel_counter = 0;
+            // }
+
 
             Er = target_rot - newpos;
             d_Er = Er - p_Er;
             y_rotation = kp * Er + kd * d_Er;
             p_Er = Er; 
 
-        }
+            message *mail = mail_box.alloc();
+            mail->rotation = y_rotation;
+            mail->typenames = 4;
+            mail_box.put(mail);
+
+            if(target_rot == 0){
+                y_rotation = YVELMAX;
+            }
+            else{
+                if (target_rot <= 0){
+                    lead = -2;   
+                }
+                else{
+                    lead = 2;   
+                }
+            }
+            if(y_rotation>YVELMAX){
+                y_rotation = YVELMAX;
+            }
+
+            MotorPWM.write(y_rotation);
+
+            current_velocity = 0;
+            vel_counter = 0;
+            
+            }
+
     }
 }
 
@@ -363,10 +395,11 @@ int main() {
 
     Ticker timing;
     Ticker position;
-
-    const int32_t PWM_PRD = 2000;
-    MotorPWM.period_us(PWM_PRD);
-    MotorPWM.pulsewidth_us(PWM_PRD);
+    MotorPWM.period(0.002f);
+    MotorPWM.write(1.0f);   
+    // const int32_t PWM_PRD = 2000;
+    // MotorPWM.period_us(PWM_PRD);
+    // MotorPWM.pulsewidth_us(PWM_PRD);
 
     //Initialise the serial port
     pc.printf("Hello\n\r");
@@ -376,7 +409,7 @@ int main() {
     pc.printf("Rotor origin: %x\n\r",orState);
     //orState is subtracted from future rotor state inputs to align rotor and motor states
 
-    MotorPWM.pulsewidth_us(PWM_PRD/2);
+    //MotorPWM.pulsewidth_us(PWM_PRD/2);
     //Poll the rotor state and set the motor outputs accordingly to spin the motor
 
     timing.attach(&CountHash, 10.0);
@@ -400,3 +433,4 @@ int main() {
         //decode(); 
     }
 }
+
