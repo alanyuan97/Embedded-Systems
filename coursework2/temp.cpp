@@ -148,7 +148,7 @@ void motorCtrlFn(){
                 }
             }
             if(y_rotation < 0){
-                
+                lead = lead*-1; 
                 y_rotation = abs(y_rotation);
                 }
             
