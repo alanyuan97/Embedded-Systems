@@ -49,8 +49,7 @@ const int8_t driveTable[] = {0x12,0x18,0x09,0x21,0x24,0x06,0x00,0x00};
 //Mapping from interrupter inputs to sequential rotor states. 0x00 and 0x07 are not valid
 const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
-const int8_t kp=25;
-const int8_t kd=20;
+
 const uint32_t YVELMAX=1.0f;
 //Phase lead to make motor spin
 int8_t lead = -2;  //2 for forwards, -2 for backwards
@@ -82,10 +81,12 @@ Mutex newkey_mutex;
 uint64_t newkey = 0;
 Mail<uint8_t, 8> inCharQ;
 volatile double current_velocity =0;
-double target_vel=30;
-double target_rot=800;
+volatile double target_vel=30;
+volatile double target_rot=800;
 volatile float y_velocity=0;
 volatile float y_rotation=0;
+volatile bool vel_enter = true; 
+volatile bool val_enter = false; 
 
 
 RawSerial pc(SERIAL_TX, SERIAL_RX);
@@ -112,95 +113,145 @@ void motorCtrlTick(){
      motorCtrlT.signal_set(0x1); 
 }
 
-void motorCtrlFn(){
-    Ticker motorCtrlTicker; 
-    motorCtrlTicker.attach_us(&motorCtrlTick,100000); 
-    double oldpos=0;
-    double newpos=0;
-    double Er = 0; 
-    double d_Er = 0;
-    double p_Er = 0; 
-    int32_t vel_counter=0;
+double new_rot;
+double old_rot;
+double Er = 0; 
+double d_Er = 0;
+double p_Er = 0;
+const int8_t kpr=1;
+const int8_t kdr=0.6;
 
+double Es = 0; 
+double d_Es = 0;
+double p_Es = 0;
+double integral_Es = 0; 
+const int8_t kps=0.2;
+const int8_t kis=0.005;
+const int8_t integral_Es_Max = 800;
 
-
-    while(1){
-        motorCtrlT.signal_wait(0x1); // wait for thread signal
-        newpos = (double)motorPosition/6;
-        current_velocity += (double)(newpos-oldpos); //unit in radians. times 10 because 100ms per call means 0.1s per call
-        oldpos = newpos;
-        vel_counter++;
+void pos_control(){ 
+    Er = target_rot - new_rot;
+    d_Er = Er - p_Er;
+    y_rotation = kpr * Er + kdr * d_Er;
+    pc.printf("\n position: %f\n\r", y_rotation);
+    p_Er = Er; 
         
-        Er = target_rot - newpos;
-        d_Er = Er - p_Er;
-        y_rotation = kp * Er + kd * d_Er;
-        p_Er = Er; 
-        
-        if(target_rot == 0){
-                y_rotation = YVELMAX;
+    if(target_rot == 0){
+            y_rotation = YVELMAX;
+        }
+        else{
+            if (target_rot <= 0){
+                lead = -2;   
             }
             else{
-                if (target_rot <= 0){
-                    lead = -2;   
-                }
-                else{
-                    lead = 2;   
-                }
+                lead = 2;   
             }
-            if(y_rotation < 0){
-                lead = lead*-1; 
-                y_rotation = abs(y_rotation);
-                }
-            
-            if(y_rotation>YVELMAX){
-                y_rotation = YVELMAX;
-            }
+        }
 
-            MotorPWM.write(y_rotation);
-            
-        if (vel_counter == 10){
-
-            // y_velocity = kp*(target_vel-abs(current_velocity));
-
-            // if(target_vel == 0){
-            //     y_velocity = YVELMAX;
-            // }
-            // else{
-            //     if (target_vel <= 0){
-            //         lead = -2;   
-            //     }
-            //     else{
-            //         lead = 2;   
-            //     }
-
-            // if(y_velocity>YVELMAX){
-            //     y_velocity = YVELMAX;
-            // }
-
-            // MotorPWM.write(y_velocity);
-             
-            // message *mail = mail_box.alloc();
-            // mail->velocity = current_velocity;
-            // mail->typenames = 4;
-            // mail_box.put(mail);
-            // current_velocity = 0;
-            // vel_counter = 0;
-            // }
-
-            message *mail = mail_box.alloc();
-            mail->velocity = y_rotation;
-            mail->typenames = 4;
-            mail_box.put(mail);
-            
-            current_velocity = 0;
-            vel_counter = 0;
-
-            }
-
+    if(y_rotation < 0){
+        lead = -1*lead; 
+        y_rotation = abs(y_rotation);
+        }
+    
+    if(y_rotation>YVELMAX){
+        y_rotation = YVELMAX;
     }
 }
 
+void vel_control(){
 
+    Es = abs(d_Er) - target_vel;
+    d_Es = Es - p_Es;
+    integral_Es = d_Es * 0.1; 
+    if(integral_Es > 800){
+        integral_Es = 800;
+    }
+    if(integral_Es < -800){
+        integral_Es = 800;
+    }
+    y_velocity = (kps*Es+kis*integral_Es);
+    pc.printf("\n Velocity: %f\n\r", y_velocity);
+    p_Es = Es;
+
+    if(d_Er < 0){
+        y_velocity = -1 * y_velocity;
+    }
+
+    if(target_vel == 0){
+        y_velocity = YVELMAX;
+    }
+    else{
+        if (target_vel <= 0){
+            lead = -2;   
+        }
+        else{
+            lead = 2;   
+        }
+    }
+
+    if(y_velocity < 0){
+        lead = -1*lead; 
+        y_velocity = abs(y_velocity);
+    }
+
+    if(y_velocity>YVELMAX){
+        y_velocity = YVELMAX;
+    }
+}
+
+void motorCtrlFn(){
+    Ticker motorCtrlTicker; 
+    motorCtrlTicker.attach_us(&motorCtrlTick,100000); 
+    old_rot=0;
+    new_rot=0;
+    int32_t vel_counter=0;
+
+    while(1){
+        motorCtrlT.signal_wait(0x1); // wait for thread signal
+        new_rot = (double)motorPosition/6;
+        current_velocity = (double)(new_rot-old_rot)*10; //100ms per call means 0.1s per call
+        old_rot = new_rot;
+        vel_counter++;
+        pos_control();
+        vel_control();
+       if(val_enter && !vel_enter){
+            pc.printf("\n rotation: %f\n\r", y_rotation);
+            MotorPWM.write(y_rotation);
+        }
+        else if(vel_enter && !val_enter){
+            pc.printf("\n Velocity: %f\n\r", y_velocity);
+            MotorPWM.write(y_velocity);
+        }
+        else if(vel_enter && val_enter){
+            pc.printf("\n Velocity: %f\n\r", y_velocity);
+            pc.printf("\n rotation: %f\n\r", y_rotation);
+            if(d_Er < 0){
+                if(y_velocity>y_rotation){
+                     MotorPWM.write(y_velocity);
+                }
+                else{
+                     MotorPWM.write(y_rotation);
+                }
+            }
+            else{
+                if(y_velocity<y_rotation){
+                     MotorPWM.write(y_velocity);
+                }
+                else{
+                     MotorPWM.write(y_rotation);
+                }
+            }
+        }  
+
+        if (vel_counter == 9){
+            message *mail = mail_box.alloc();
+            mail->velocity = current_velocity;
+            mail->typenames = 4;
+            mail_box.put(mail);
+            vel_counter = 0;
+            }
+    }
+}
 
 
 //Set a given drive state
@@ -359,11 +410,6 @@ void decode(){
         else{
             infobuffer[counter] =  '\0';
             switch(infobuffer[0]){
-                // Rotation numbers
-                case('R'):
-                    sscanf(infobuffer,"R%f",&target_rot);
-                    // dump the target TODO
-                    break;
                 // Key
                 case('K'):
                     newkey_mutex.lock(); 
@@ -374,7 +420,14 @@ void decode(){
                     break;
                 // Velocity
                 case('V'):
+                    vel_enter = true; 
                     sscanf(infobuffer,"V%f",&target_vel);
+                    // dump the target TODO
+                    break;
+                    // Rotation numbers
+                case('R'):
+                    val_enter = true; 
+                    sscanf(infobuffer,"R%f",&target_rot);
                     // dump the target TODO
                     break;
             }
@@ -421,8 +474,8 @@ int main() {
 
     CheckState();
     //compute_thread.start(callback(compute));
-    print_thread.start(callback(myprint));
-    decode_thread.start(callback(decode));
+    //print_thread.start(callback(myprint));
+    //decode_thread.start(callback(decode));
     motorCtrlT.start(callback(motorCtrlFn));
     
     while (1) {
