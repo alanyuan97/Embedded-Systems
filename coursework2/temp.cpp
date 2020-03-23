@@ -50,7 +50,7 @@ const int8_t driveTable[] = {0x12,0x18,0x09,0x21,0x24,0x06,0x00,0x00};
 const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 
-const uint32_t YVELMAX=1.0f;
+const float YVELMAX=0.8f;
 //Phase lead to make motor spin
 int8_t lead = -2;  //2 for forwards, -2 for backwards
 int8_t orState = 0;
@@ -75,14 +75,14 @@ Mail<message, 16> mail_box;
 //Thread compute_thread;
 Thread print_thread;
 Thread decode_thread(osPriorityNormal,1024);
-Thread motorCtrlT(osPriorityNormal,1024);
+Thread motorCtrlT(osPriorityHigh,1024);
 
 Mutex newkey_mutex;
 uint64_t newkey = 0;
 Mail<uint8_t, 8> inCharQ;
-volatile double current_velocity =0;
-volatile double target_vel=30;
-volatile double target_rot=800;
+volatile float current_velocity =0;
+volatile float target_vel=80;
+volatile float target_rot=80;
 volatile float y_velocity=0;
 volatile float y_rotation=0;
 volatile bool vel_enter = true; 
@@ -113,69 +113,53 @@ void motorCtrlTick(){
      motorCtrlT.signal_set(0x1); 
 }
 
-double new_rot;
-double old_rot;
-double Er = 0; 
-double d_Er = 0;
-double p_Er = 0;
-const int8_t kpr=1;
-const int8_t kdr=0.6;
+float new_rot;
+float old_rot;
+float Er = 0; 
+float d_Er = 0;
+float p_Er = 0;
+const float kpr=0.1;
+const float kdr=0.06;
 
-double Es = 0; 
-double d_Es = 0;
-double p_Es = 0;
-double integral_Es = 0; 
-const int8_t kps=0.2;
-const int8_t kis=0.005;
-const int8_t integral_Es_Max = 800;
+float Es = 0; 
+float d_Es = 0;
+float p_Es = 0;
+float integral_Es = 0; 
+const float kps=0.2;
+const float kis=0.005;
+const float integral_Es_Max = 800.0;
 
 void pos_control(){ 
-    Er = target_rot - new_rot;
-    d_Er = Er - p_Er;
-    y_rotation = kpr * Er + kdr * d_Er;
-    pc.printf("\n position: %f\n\r", y_rotation);
-    p_Er = Er; 
         
     if(target_rot == 0){
-            y_rotation = YVELMAX;
+        y_rotation = 0;
+    }
+    else{
+        if (target_rot <= 0){
+            lead = -2;   
         }
         else{
-            if (target_rot <= 0){
-                lead = -2;   
-            }
-            else{
-                lead = 2;   
-            }
+            lead = 2;   
         }
 
-    if(y_rotation < 0){
-        lead = -1*lead; 
-        y_rotation = abs(y_rotation);
+        Er = target_rot - new_rot;
+        d_Er = Er - p_Er;
+        y_rotation = kpr * Er + kdr * d_Er;
+        //pc.printf("\n position: %f\n\r", Er);
+        p_Er = Er; 
+
+        if(y_rotation < 0){
+            lead = -1*lead; 
+            y_rotation = abs(y_rotation);
+            }
+        
+        if(y_rotation>YVELMAX){
+            y_rotation = YVELMAX;
         }
-    
-    if(y_rotation>YVELMAX){
-        y_rotation = YVELMAX;
     }
 }
 
 void vel_control(){
-
-    Es = abs(d_Er) - target_vel;
-    d_Es = Es - p_Es;
-    integral_Es = d_Es * 0.1; 
-    if(integral_Es > 800){
-        integral_Es = 800;
-    }
-    if(integral_Es < -800){
-        integral_Es = 800;
-    }
-    y_velocity = (kps*Es+kis*integral_Es);
-    pc.printf("\n Velocity: %f\n\r", y_velocity);
-    p_Es = Es;
-
-    if(d_Er < 0){
-        y_velocity = -1 * y_velocity;
-    }
 
     if(target_vel == 0){
         y_velocity = YVELMAX;
@@ -187,15 +171,38 @@ void vel_control(){
         else{
             lead = 2;   
         }
-    }
 
-    if(y_velocity < 0){
-        lead = -1*lead; 
-        y_velocity = abs(y_velocity);
-    }
+        if(current_velocity<0){
+            target_vel = -1*abs(target_vel);
+        }
+        else{
+            target_vel = abs(target_vel);
+        }
 
-    if(y_velocity>YVELMAX){
-        y_velocity = YVELMAX;
+        Es = target_vel - current_velocity;
+
+        d_Es = Es - p_Es;
+
+        integral_Es = d_Es * 0.1; 
+
+        if(integral_Es > 800){
+            integral_Es = 800;
+        }
+        if(integral_Es < -800){
+            integral_Es = 800;
+        }
+        y_velocity = (kps*Es+kis*integral_Es);
+        //pc.printf("\n Velocity: %f\n\r", y_velocity);
+        p_Es = Es;
+
+        if(y_velocity < 0){
+            lead = -1*lead; 
+            y_velocity = abs(y_velocity);
+        }
+
+        if(y_velocity>YVELMAX){
+            y_velocity = YVELMAX;
+        }
     }
 }
 
@@ -208,8 +215,8 @@ void motorCtrlFn(){
 
     while(1){
         motorCtrlT.signal_wait(0x1); // wait for thread signal
-        new_rot = (double)motorPosition/6;
-        current_velocity = (double)(new_rot-old_rot)*10; //100ms per call means 0.1s per call
+        new_rot = (float)motorPosition/6.0;
+        current_velocity = (float)(new_rot-old_rot)*10; //100ms per call means 0.1s per call
         old_rot = new_rot;
         vel_counter++;
         pos_control();
@@ -219,7 +226,7 @@ void motorCtrlFn(){
             MotorPWM.write(y_rotation);
         }
         else if(vel_enter && !val_enter){
-            pc.printf("\n Velocity: %f\n\r", y_velocity);
+            pc.printf("\n Velocity: %f\n\r", current_velocity);
             MotorPWM.write(y_velocity);
         }
         else if(vel_enter && val_enter){
@@ -474,7 +481,7 @@ int main() {
 
     CheckState();
     //compute_thread.start(callback(compute));
-    //print_thread.start(callback(myprint));
+    print_thread.start(callback(myprint));
     //decode_thread.start(callback(decode));
     motorCtrlT.start(callback(motorCtrlFn));
     
@@ -483,10 +490,10 @@ int main() {
         newkey_mutex.lock();
         *key = newkey;
         newkey_mutex.unlock();
-        // Compute Hash
+        //Compute Hash
         compute();
         *nonce = *nonce + 1;
-        hash_counter+=1;
+        hash_counter = hash_counter + 1;
         //decode(); 
     }
 }
