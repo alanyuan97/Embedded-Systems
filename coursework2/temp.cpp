@@ -50,6 +50,25 @@ const int8_t driveTable[] = {0x12,0x18,0x09,0x21,0x24,0x06,0x00,0x00};
 const int8_t stateMap[] = {0x07,0x05,0x03,0x04,0x01,0x00,0x02,0x07};
 //const int8_t stateMap[] = {0x07,0x01,0x03,0x02,0x05,0x00,0x04,0x07}; //Alternative if phase order of input or drive is reversed
 
+const int tuneTable[]={
+1000000/416,   //0 |G#/A~
+1000000/440,   //1 |A
+1000000/467,   //2 |A#/B~
+1000000/494,   //3 |B
+1000000/2000,  //4 | UNDEFINED
+1000000/262,   //5 |C
+1000000/278,   //6 |C#/D~
+1000000/294,   //7 |D
+1000000/312,   //8 |D#/E~
+1000000/330,   //9 |E
+1000000/2000,  //A| UNDEFINED
+1000000/349,   //B |F
+1000000/370,   //C |F#/G~
+1000000/392,   //D |G
+1000000/416,   //E |G#/A~
+};
+
+
 const float YVELMAX=0.8f;
 //Phase lead to make motor spin
 int8_t lead = -2;  //2 for forwards, -2 for backwards
@@ -60,7 +79,8 @@ volatile int32_t motorPosition=0;
 uint8_t sequence[] = {0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64, 0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73, 0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E, 0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20, 0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20, 0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 uint64_t* key = (uint64_t*)&sequence[48];
 uint64_t* nonce = (uint64_t*)&sequence[56];
-char infobuffer[18];
+char infobuffer[128];
+uint8_t TUNES[16] = {0};
 int counter = 0;
 bool movement_dir;
 
@@ -78,16 +98,20 @@ Thread decode_thread(osPriorityNormal,1024);
 Thread motorCtrlT(osPriorityHigh,1024);
 
 Mutex newkey_mutex;
+Mutex newtune_mutex;
+
 uint64_t newkey = 0;
 Mail<uint8_t, 8> inCharQ;
+CircularBuffer<char, 128> Buffer;
 volatile float current_velocity =0;
-volatile float target_vel=80;
-volatile float target_rot=80;
+volatile float target_vel=0;
+volatile float target_rot=0;
 volatile float y_velocity=0;
 volatile float y_rotation=0;
-volatile bool vel_enter = true; 
+volatile bool vel_enter = false; 
 volatile bool val_enter = false; 
-
+volatile bool spinForever = false;
+volatile bool tune_enter = true;
 
 RawSerial pc(SERIAL_TX, SERIAL_RX);
 //Status LED
@@ -115,10 +139,12 @@ void motorCtrlTick(){
 
 float new_rot;
 float old_rot;
+//float tmp_pos = 0;
+volatile int targetPosition = 0;
 float Er = 0; 
 float d_Er = 0;
 float p_Er = 0;
-const float kpr=0.1;
+const float kpr=0.3;
 const float kdr=0.06;
 
 float Es = 0; 
@@ -127,42 +153,112 @@ float p_Es = 0;
 float integral_Es = 0; 
 const float kps=0.2;
 const float kis=0.005;
-const float integral_Es_Max = 800.0;
+const float integral_Es_Max = 1000.0;
 
-void pos_control(){ 
+float torque; 
+float vControl = 0.0;
+float rControl = 0.0;
+
+// void pos_control(){ 
+
+//     if(target_rot == 0){
+//         y_rotation = 0;
+//     }
+//     else{
+//         if (target_rot <= 0){
+//             lead = -2;   
+//         }
+//         else{
+//             lead = 2;   
+//         }
+//         pc.printf("\n y rotation: %f\n\r", motorPosition);
+
+//         Er = target_rot - new_rot + tmp_pos;
+//         d_Er = Er - p_Er;
+//         y_rotation = kpr * Er + kdr * d_Er;
+//         p_Er = Er; 
+
+//         if(y_rotation < 0){
+//             lead = -1*lead; 
+//             y_rotation = abs(y_rotation);
+//             }
         
-    if(target_rot == 0){
-        y_rotation = 0;
+//         if(y_rotation>YVELMAX){
+//             y_rotation = YVELMAX;
+//         }
+//     }
+// }
+
+float positionControl(){
+    float Tr;
+    Er = targetPosition - motorPosition/6.0;
+    d_Er = Er - p_Er;
+    p_Er = Er;
+    Tr = (kpr*Er + kdr*d_Er);
+    lead = (Tr >= 0) ?  2 : -2;
+    Tr = abs(Tr);
+    if(Tr > YVELMAX){
+        Tr = YVELMAX;   
     }
-    else{
-        if (target_rot <= 0){
-            lead = -2;   
-        }
-        else{
-            lead = 2;   
-        }
 
-        Er = target_rot - new_rot;
-        d_Er = Er - p_Er;
-        y_rotation = kpr * Er + kdr * d_Er;
-        //pc.printf("\n position: %f\n\r", Er);
-        p_Er = Er; 
+    return Tr;
+   }  
 
-        if(y_rotation < 0){
-            lead = -1*lead; 
-            y_rotation = abs(y_rotation);
-            }
-        
-        if(y_rotation>YVELMAX){
-            y_rotation = YVELMAX;
-        }
-    }
-}
 
-void vel_control(){
+// void vel_control(){
+
+//     if(target_vel == 0){
+//         y_velocity = 0;
+//     }
+//     else{
+//         if (target_vel <= 0){
+//             lead = -2;   
+//         }
+//         else{
+//             lead = 2;   
+//         }
+
+//         if(current_velocity<0){
+//             target_vel = -1*abs(target_vel);
+//         }
+//         else{
+//             target_vel = abs(target_vel);
+//         }
+
+//         Es = target_vel - current_velocity;
+
+//         d_Es = Es - p_Es;
+
+//         integral_Es = d_Es * 0.1; 
+
+//         if(integral_Es > 800){
+//             integral_Es = 800;
+//         }
+//         if(integral_Es < -800){
+//             integral_Es = 800;
+//         }
+//         y_velocity = (kps*Es+kis*integral_Es);
+//         //pc.printf("\n Velocity: %f\n\r", y_velocity);
+//         p_Es = Es;
+
+//         if(y_velocity < 0){
+//             lead = -1*lead; 
+//             y_velocity = abs(y_velocity);
+//         }
+
+//         if(y_velocity>YVELMAX){
+//             y_velocity = YVELMAX;
+//         }
+//     }
+// }
+
+
+float velocityControl(){
+    
+    float Ts;
 
     if(target_vel == 0){
-        y_velocity = YVELMAX;
+        Ts = 0;
     }
     else{
         if (target_vel <= 0){
@@ -191,20 +287,46 @@ void vel_control(){
         if(integral_Es < -800){
             integral_Es = 800;
         }
-        y_velocity = (kps*Es+kis*integral_Es);
+        Ts = (kps*Es+kis*integral_Es);
         //pc.printf("\n Velocity: %f\n\r", y_velocity);
         p_Es = Es;
 
-        if(y_velocity < 0){
+        if(Ts < 0){
             lead = -1*lead; 
-            y_velocity = abs(y_velocity);
+            Ts = abs(Ts);
         }
 
-        if(y_velocity>YVELMAX){
-            y_velocity = YVELMAX;
+        if(Ts>YVELMAX){
+            Ts = YVELMAX;
         }
     }
+
+    // if(target_vel == 0) Ts = YVELMAX;
+    // else{
+    //     if (target_vel <= 0){
+    //         lead = -2;   
+    //     }
+    //     else{
+    //         lead = 2;   
+    //     }
+        
+    //     //error term
+    //     Es = target_vel - abs(current_velocity);
+        
+    //     //Integral error
+    //     integral_Es = integral_Es + Es/0.1;
+    //     if(integral_Es > integral_Es_Max) integral_Es = integral_Es_Max;
+    //     if(integral_Es < -integral_Es_Max) integral_Es = -integral_Es_Max;
+        
+    //     Ts = kps*Es + kis*integral_Es;
+       
+    //     if(Ts > YVELMAX){
+    //        Ts = YVELMAX;   
+    //     }
+    // }
+    return Ts;
 }
+
 
 void motorCtrlFn(){
     Ticker motorCtrlTicker; 
@@ -219,36 +341,65 @@ void motorCtrlFn(){
         current_velocity = (float)(new_rot-old_rot)*10; //100ms per call means 0.1s per call
         old_rot = new_rot;
         vel_counter++;
-        pos_control();
-        vel_control();
-       if(val_enter && !vel_enter){
-            pc.printf("\n rotation: %f\n\r", y_rotation);
-            MotorPWM.write(y_rotation);
+
+        if(spinForever){
+            if(vel_enter) torque = velocityControl();
+            else torque = YVELMAX;
         }
         else if(vel_enter && !val_enter){
-            pc.printf("\n Velocity: %f\n\r", current_velocity);
-            MotorPWM.write(y_velocity);
+            torque = velocityControl();
         }
-        else if(vel_enter && val_enter){
-            pc.printf("\n Velocity: %f\n\r", y_velocity);
-            pc.printf("\n rotation: %f\n\r", y_rotation);
-            if(d_Er < 0){
-                if(y_velocity>y_rotation){
-                     MotorPWM.write(y_velocity);
+        else if(val_enter && !vel_enter){
+            torque = positionControl();
+        }
+        else if(val_enter && vel_enter){
+            vControl = velocityControl();
+            rControl = positionControl();
+            if(current_velocity >= 0){
+                if(vControl >= rControl){
+                    torque = rControl;
                 }
                 else{
-                     MotorPWM.write(y_rotation);
+                    torque = vControl;
                 }
             }
             else{
-                if(y_velocity<y_rotation){
-                     MotorPWM.write(y_velocity);
+                if(vControl <= rControl){
+                    torque = rControl;
                 }
-                else{
-                     MotorPWM.write(y_rotation);
+                 else{
+                    torque= vControl;
                 }
-            }
-        }  
+              }
+        }
+              MotorPWM.write(torque);
+
+        // pos_control();
+        // vel_control();
+    //    if(val_enter && !vel_enter){
+    //         MotorPWM.write(y_rotation);
+    //     }
+    //     else if(vel_enter && !val_enter){
+    //         MotorPWM.write(y_velocity);
+    //     }
+    //     else if(vel_enter && val_enter){
+    //         if(d_Er < 0){
+    //             if(y_velocity>y_rotation){
+    //                  MotorPWM.write(y_velocity);
+    //             }
+    //             else{
+    //                  MotorPWM.write(y_rotation);
+    //             }
+    //         }
+    //         else{
+    //             if(y_velocity<y_rotation){
+    //                  MotorPWM.write(y_velocity);
+    //             }
+    //             else{
+    //                  MotorPWM.write(y_rotation);
+    //             }
+    //         }
+    //     }  
 
         if (vel_counter == 9){
             message *mail = mail_box.alloc();
@@ -314,9 +465,6 @@ void motorISR(){
     else if (rotorState - oldRotorState == -5) motorPosition++;
     else motorPosition += (rotorState - oldRotorState);
     oldRotorState = rotorState;
-
-
-
 }
 
 void CheckState(){
@@ -346,11 +494,11 @@ void myprint(){
             switch(mail->typenames){
                 // Type 1: Found Hash, Print nonce
                 case(1):
-                    pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
+                    //pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
                     break;
                 // Type 2: Hash rate    
                 case(2):
-                    pc.printf("\n Hash-rate: %d\n\r", mail->data);
+                    //pc.printf("\n Hash-rate: %d\n\r", mail->data);
                     break;
                 // Type 3: Abs positon of rotor 
                 case(3):
@@ -360,12 +508,9 @@ void myprint(){
                     pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
                 case(5):
-                    pc.printf("\n key found: %llx\n\r", mail->key);
+                    //pc.printf("\n key found: %llx\n\r", mail->key);
                     break;
             }
-            // pc.printf("\ntype: 0x%d\n\r", mail->typenames);
-            // pc.printf("\ndata: 0x%d\n\r", mail->data);
-
         mail_box.free(mail);
         }
     }
@@ -391,6 +536,39 @@ void serialISR(){
     inCharQ.put(newChar);
 }
 
+
+void decode_tune(){
+     char A_token;
+     char Op_token;
+     int8_t tmp_tune;
+     for (int i=0; i<16; ++i){
+         Buffer.pop(A_token);
+         if (A_token<'A' || A_token>'G') {
+             TUNES[i] = 0;
+             break;
+         }
+         tmp_tune=(A_token-'A')*2+1;
+
+         Buffer.pop(Op_token); // [#^]?[1-8]
+         if (Op_token>='0' && Op_token<='9'){
+             TUNES[i] = (Op_token-'0')<<4 | tmp_tune;
+         }else{
+             if (Op_token=='#') tmp_tune += 1;
+             else tmp_tune -= 1;
+
+             Buffer.pop(Op_token);
+             TUNES[i] = (Op_token-'0')<<4 | tmp_tune;
+         }
+     }
+ }
+
+ inline void clear_buffer(){
+     char temp;
+     for(Buffer.pop(temp);temp!= '\r';Buffer.pop(temp)){}
+ }
+
+
+
 void dumpMes(int type, uint64_t datain){
     newkey_mutex.lock();
     message *mail = mail_box.alloc();
@@ -401,18 +579,25 @@ void dumpMes(int type, uint64_t datain){
 }
 
 void decode(){
-    pc.attach(&serialISR); 
+    //pc.attach(&serialISR); 
     while(1) {
-        osEvent newEvent = inCharQ.get();
-        uint8_t *newChar = (uint8_t*)newEvent.value.p; 
+        char newChar;
+         // osEvent newEvent = inCharQ.get();
+         // uint8_t *newChar = (uint8_t*)newEvent.value.p;
+         Buffer.pop(newChar);
 
-        if(*newChar!='\r'){
-            infobuffer[counter] = *newChar;
-            counter>=17 ? counter =0: counter++;
-        // continue
-        //    pc.printf("\n key: %c\n\r", infobuffer[counter]);
-        //    pc.printf("counter %d\n\r", counter);
-        }
+         if(newChar!='\r'){
+             infobuffer[counter] = newChar;
+             counter>=128 ? counter =0: counter++;
+         }
+
+        // osEvent newEvent = inCharQ.get();
+        // uint8_t *newChar = (uint8_t*)newEvent.value.p; 
+
+        // if(*newChar!='\r'){
+        //     infobuffer[counter] = *newChar;
+        //     counter>=17 ? counter =0: counter++;
+        // }
 
         else{
             infobuffer[counter] =  '\0';
@@ -433,10 +618,32 @@ void decode(){
                     break;
                     // Rotation numbers
                 case('R'):
+                    newkey_mutex.lock(); 
                     val_enter = true; 
                     sscanf(infobuffer,"R%f",&target_rot);
+
+                    if(target_rot ==0){
+                        spinForever = true;
+                    }
+                    else{
+                        targetPosition = target_rot + (new_rot);
+                    }
+                    //tmp_pos = (float)motorPosition; 
+                   
+                    newkey_mutex.unlock(); 
                     // dump the target TODO
                     break;
+                    
+                    case('T'):
+                     tune_enter = true;
+                     newtune_mutex.lock();
+                     decode_tune();
+                     newtune_mutex.unlock();
+                     break;
+                 default:
+                     // Do nothing
+                     clear_buffer();
+                     break;
             }
             counter = 0;
         }       
@@ -460,7 +667,7 @@ int main() {
     Ticker timing;
     Ticker position;
     MotorPWM.period(0.002f);
-    MotorPWM.write(1.0f);   
+    //MotorPWM.write(1.0f);   
     // const int32_t PWM_PRD = 2000;
     // MotorPWM.period_us(PWM_PRD);
     // MotorPWM.pulsewidth_us(PWM_PRD);
@@ -482,7 +689,7 @@ int main() {
     CheckState();
     //compute_thread.start(callback(compute));
     print_thread.start(callback(myprint));
-    //decode_thread.start(callback(decode));
+    decode_thread.start(callback(decode));
     motorCtrlT.start(callback(motorCtrlFn));
     
     while (1) {
@@ -497,4 +704,3 @@ int main() {
         //decode(); 
     }
 }
-
