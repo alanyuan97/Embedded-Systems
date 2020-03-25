@@ -111,7 +111,7 @@ volatile float y_rotation=0;
 volatile bool vel_enter = true; 
 volatile bool val_enter = false; 
 volatile bool tune_enter = true;
-
+bool NEWLINE_SIG = false;
 
 RawSerial pc(SERIAL_TX, SERIAL_RX);
 //Status LED
@@ -410,9 +410,27 @@ void compute(){
 }
 
 void serialISR(){
-    uint8_t* newChar = inCharQ.alloc();
-    *newChar = pc.getc(); 
-    inCharQ.put(newChar);
+    // uint8_t* newChar = inCharQ.alloc();
+    char newChar;
+    newChar = pc.getc(); 
+    // inCharQ.put(newChar);
+    if (newChar != '\r') {
+        Buffer.push(newChar);
+        NEWLINE_SIG = false;
+    }
+    else {
+        NEWLINE_SIG = true;
+    }
+}
+
+void ISR_command_getchar(){
+    char c = (char) pc.getc();
+    pc.putc(c); //DEBUG: provide feedback to show char is processed
+
+    if(c!='\n') commandBuffer.push(c); // spec says end with cr, ignore nl
+
+    if (c=='\r') commandParser.flags_set(SIGNAL_NEWLINE); //send signal to command parser
+
 }
 
 void dumpMes(int type, uint64_t datain){
