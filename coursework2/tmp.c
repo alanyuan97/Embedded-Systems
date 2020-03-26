@@ -119,8 +119,8 @@ float tmp_rot = 0;
 float Er = 0; 
 float d_Er = 0;
 float p_Er = 0;
-const float kpr=0.1;
-const float kdr=0.08;
+const float kpr=0.4;
+const float kdr=0.01;
 
 float Es = 0; 
 float d_Es = 0;
@@ -143,12 +143,11 @@ void pos_control(){
             lead = 2;   
         }
 
-        Er = target_rot - abs(new_rot) + abs(tmp_rot);
+        Er = abs(target_rot) - abs(new_rot) + abs(tmp_rot);
         d_Er = Er - p_Er;
         y_rotation = kpr * Er + kdr * d_Er;
         p_Er = Er; 
-        // pc.printf("rotation Error: %f ", Er);
-        // pc.printf("y rotation: %f ", y_rotation);
+
         if(y_rotation < 0){
             lead = -1*lead; 
             //y_rotation = abs(y_rotation);
@@ -169,12 +168,7 @@ void vel_control(){
         y_velocity = 0;
     }
     else{
-        if (target_vel <= 0){
-            lead = -2;   
-        }
-        else{
-            lead = 2;   
-        }
+        target_vel = abs(target_vel);
 
         if(current_velocity<0){
             target_vel = -1*abs(target_vel);
@@ -196,9 +190,7 @@ void vel_control(){
             integral_Es = 800;
         }
         y_velocity = (kps*Es+kis*integral_Es);
-        
-        // pc.printf("current velocity: %f ", current_velocity);
-        // pc.printf("y velocity: %f\n\r", y_velocity);
+ 
         p_Es = Es;
 
         if(y_velocity < 0){
@@ -231,7 +223,7 @@ void motorCtrlFn(){
 
         pos_control();
         vel_control();
-        pc.printf("current velocity %f, pos_err %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
+        pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
        if(val_enter && !vel_enter){
             MotorPWM.write(y_rotation);
         }
