@@ -60,7 +60,28 @@ volatile int32_t motorPosition=0;
 uint8_t sequence[] = {0x45,0x6D,0x62,0x65,0x64,0x64,0x65,0x64, 0x20,0x53,0x79,0x73,0x74,0x65,0x6D,0x73, 0x20,0x61,0x72,0x65,0x20,0x66,0x75,0x6E, 0x20,0x61,0x6E,0x64,0x20,0x64,0x6F,0x20, 0x61,0x77,0x65,0x73,0x6F,0x6D,0x65,0x20, 0x74,0x68,0x69,0x6E,0x67,0x73,0x21,0x20, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 uint64_t* key = (uint64_t*)&sequence[48];
 uint64_t* nonce = (uint64_t*)&sequence[56];
-char infobuffer[18];
+
+const int tuneTable[]={
+1000000/416,   //0 |G#/A~
+1000000/440,   //1 |A
+1000000/467,   //2 |A#/B~
+1000000/494,   //3 |B
+1000000/2000,  //4 | UNDEFINED
+1000000/262,   //5 |C
+1000000/278,   //6 |C#/D~
+1000000/294,   //7 |D
+1000000/312,   //8 |D#/E~
+1000000/330,   //9 |E
+1000000/2000,  //A| UNDEFINED
+1000000/349,   //B |F
+1000000/370,   //C |F#/G~
+1000000/392,   //D |G
+1000000/416,   //E |G#/A~
+};
+
+char infobuffer[128];
+uint8_t TUNES[16] = {0};
+uint8_t tune_idx;
 int counter = 0;
 bool movement_dir;
 
@@ -78,6 +99,7 @@ Thread decode_thread(osPriorityNormal,1024);
 Thread motorCtrlT(osPriorityHigh,1024);
 
 Mutex newkey_mutex;
+Mutex newtune_mutex;
 uint64_t newkey = 0;
 Mail<uint8_t, 8> inCharQ;
 volatile float current_velocity =0;
@@ -87,8 +109,8 @@ volatile float y_velocity=0;
 volatile float y_rotation=0;
 volatile bool vel_enter = false; 
 volatile bool val_enter = false; 
-
-
+volatile bool tune_enter = false;
+Timeout time_tune;
 RawSerial pc(SERIAL_TX, SERIAL_RX);
 //Status LED
 DigitalOut led1(LED1);
@@ -160,8 +182,6 @@ void pos_control(){
     }
 }
 
-
-
 void vel_control(){
 
     if(target_vel == 0){
@@ -204,7 +224,19 @@ void vel_control(){
     }
 }
 
+void melody_tune_control(){
+    uint8_t reading = tuneTable[tune_idx];
+    uint8_t duration = reading>>4;
 
+    MotorPWM.period_us(tuneTable[reading&0xf]);
+
+    time_tune.attach_us(&melody_tune_control, 125000*duration);
+    if (duration==0 || tune_idx==15 ){
+        tune_idx = 0;
+    }else{
+        tune_idx++;
+    }
+}
 
 
 void motorCtrlFn(){
@@ -247,7 +279,14 @@ void motorCtrlFn(){
                      MotorPWM.write(y_rotation);
                 }
             //}
-        }  
+        }
+
+        else if (tune_enter){
+            tune_idx = 0;
+            newtune_mutex.lock();
+            melody_tune_control();
+            newtune_mutex.unlock();
+        }
 
         if (vel_counter == 9){
             message *mail = mail_box.alloc();
@@ -400,6 +439,46 @@ void dumpMes(int type, uint64_t datain){
     newkey_mutex.unlock();
 }
 
+void decode_tune(){
+    int i;
+    char first_token;
+    char op_token;
+    int8_t tmp_tune;
+    uint8_t tune_counter;
+
+    for(i=1;i<128;i++){
+        tune_counter = 0;
+        // reached end of buffer
+        if infobuffer[i] == '\0'{
+            // do
+            break;
+        }
+        else{
+            first_token = infobuffer[i];
+            // Found tune
+            if (first_token>'A' && first_token<'G') {
+                tune_counter = tune_counter<15 ? tune_counter++ : tune_counter=0;
+                tmp_tune=(first_token-'A')*2+1;
+                op_token = infobuffer[i+1];
+
+                if (op_token>='0' && op_token<='9'){
+                    TUNES[tune_counter] = (op_token-'0')<<4 | tmp_tune;
+                }
+                else{
+                    if(op_token == '#'){
+                        tmp_tune++;
+                    }
+                    else if (op_token == '^'){
+                        tmp_tune--;
+                    }
+                    TUNES[tune_counter] = (op_token-'0')<<4 | tmp_tune;
+                }
+            }
+        }
+            
+    }
+}
+
 void decode(){
     pc.attach(&serialISR); 
     while(1) {
@@ -408,10 +487,7 @@ void decode(){
 
         if(*newChar!='\r'){
             infobuffer[counter] = *newChar;
-            counter>=17 ? counter =0: counter++;
-        // continue
-        //    pc.printf("\n key: %c\n\r", infobuffer[counter]);
-        //    pc.printf("counter %d\n\r", counter);
+            counter>=128 ? counter =0: counter++;
         }
 
         else{
@@ -439,6 +515,16 @@ void decode(){
                     tmp_rot = (float)motorPosition/6; 
                     newkey_mutex.unlock(); 
                     // dump the target TODO
+                    break;
+                case('T'):
+                    tune_enter = true;
+                    newtune_mutex.lock();
+                    decode_tune();
+                    newtune_mutex.unlock();
+                    break;
+                default:
+                    // Do nothing
+                    // clear_buffer();
                     break;
             }
             counter = 0;
