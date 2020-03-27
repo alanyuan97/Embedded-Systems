@@ -152,6 +152,38 @@ const float kps=0.2;
 const float kis=0.005;
 const float integral_Es_Max = 800.0;
 
+//Convert photointerrupter inputs to a rotor state
+inline int8_t readRotorState(){
+    return stateMap[I1 + 2*I2 + 4*I3];
+}
+
+
+//Set a given drive state
+void motorOut(int8_t driveState){
+
+    //Lookup the output byte from the drive state.
+    int8_t driveOut = driveTable[driveState & 0x07];
+    
+
+    //Turn off first
+    if (~driveOut & 0x01) L1L = 0;
+    if (~driveOut & 0x02) L1H = 1;
+    if (~driveOut & 0x04) L2L = 0;
+    if (~driveOut & 0x08) L2H = 1;
+    if (~driveOut & 0x10) L3L = 0;
+    if (~driveOut & 0x20) L3H = 1;
+
+    //Then turn on
+    if (driveOut & 0x01) L1L=1;
+    if (driveOut & 0x02) L1H = 0;
+    if (driveOut & 0x04)  L2L=1;
+    if (driveOut & 0x08) L2H = 0;
+    if (driveOut & 0x10) L3L=1;
+    if (driveOut & 0x20) L3H = 0;
+}
+
+
+
 void pos_control(){ 
 
     if(target_rot == 0){
@@ -165,7 +197,7 @@ void pos_control(){
             lead = 2;   
         }
 
-        Er = abs(target_rot) - abs(new_rot) + abs(tmp_rot);
+        Er = abs(target_rot) - abs(new_rot - tmp_rot);
         d_Er = Er - p_Er;
         y_rotation = kpr * Er + kdr * d_Er;
         p_Er = Er; 
@@ -255,14 +287,17 @@ void motorCtrlFn(){
 
         pos_control();
         vel_control();
-        pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
+        //pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
        if(val_enter && !vel_enter){
+            motorOut((readRotorState()-orState+lead+6)%6);
+            //每次input新的rotation之前都drive一遍motor
             MotorPWM.write(y_rotation);
         }
         // else if(vel_enter && !val_enter){
         //     MotorPWM.write(y_velocity);
         // }
         else if(vel_enter && val_enter){
+            motorOut((readRotorState()-orState+lead+6)%6);
             //if(current_velocity < 0){
             //     if(y_velocity>y_rotation){
             //          MotorPWM.write(y_velocity);
@@ -299,36 +334,6 @@ void motorCtrlFn(){
 }
 
 
-
-//Set a given drive state
-void motorOut(int8_t driveState){
-
-    //Lookup the output byte from the drive state.
-    int8_t driveOut = driveTable[driveState & 0x07];
-    
-
-    //Turn off first
-    if (~driveOut & 0x01) L1L = 0;
-    if (~driveOut & 0x02) L1H = 1;
-    if (~driveOut & 0x04) L2L = 0;
-    if (~driveOut & 0x08) L2H = 1;
-    if (~driveOut & 0x10) L3L = 0;
-    if (~driveOut & 0x20) L3H = 1;
-
-    //Then turn on
-    if (driveOut & 0x01) L1L=1;
-    if (driveOut & 0x02) L1H = 0;
-    if (driveOut & 0x04)  L2L=1;
-    if (driveOut & 0x08) L2H = 0;
-    if (driveOut & 0x10) L3L=1;
-    if (driveOut & 0x20) L3H = 0;
-}
-
-    //Convert photointerrupter inputs to a rotor state
-inline int8_t readRotorState(){
-    return stateMap[I1 + 2*I2 + 4*I3];
-    }
-
 //Basic synchronisation routine
 int8_t motorHome(){
     //Put the motor in drive state 0 and wait for it to stabilise
@@ -353,9 +358,6 @@ void motorISR(){
     else if (rotorState - oldRotorState == -5) motorPosition++;
     else motorPosition += (rotorState - oldRotorState);
     oldRotorState = rotorState;
-
-
-
 }
 
 void CheckState(){
@@ -385,21 +387,21 @@ void myprint(){
             switch(mail->typenames){
                 // Type 1: Found Hash, Print nonce
                 case(1):
-                    //pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
+                    pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
                     break;
                 // Type 2: Hash rate    
                 case(2):
-                    //pc.printf("\n Hash-rate: %d\n\r", mail->data);
+                    pc.printf("\n Hash-rate: %d\n\r", mail->data);
                     break;
                 // Type 3: Abs positon of rotor 
                 case(3):
-                    //pc.printf("\n Position: %d\n\r", mail->data);
+                    pc.printf("\n Position: %d\n\r", mail->data);
                     break;
                 case(4):
-                    //pc.printf("\n Velocity: %f\n\r", mail->velocity);
+                    pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
                 case(5):
-                    //pc.printf("\n key found: %llx\n\r", mail->key);
+                    pc.printf("\n key found: %llx\n\r", mail->key);
                     break;
             }
             // pc.printf("\ntype: 0x%d\n\r", mail->typenames);
@@ -449,7 +451,7 @@ void decode_tune(){
     for(i=1;i<128;i++){
         tune_counter = 0;
         // reached end of buffer
-        if infobuffer[i] == '\0'{
+        if (infobuffer[i] == '\0'){
             // do
             break;
         }
@@ -549,7 +551,7 @@ int main() {
     Ticker timing;
     Ticker position;
     MotorPWM.period(0.002f);
-    //MotorPWM.write(1.0f);   
+    MotorPWM.write(1.0f); //设置motor为最快转速  
     // const int32_t PWM_PRD = 2000;
     // MotorPWM.period_us(PWM_PRD);
     // MotorPWM.pulsewidth_us(PWM_PRD);
@@ -559,19 +561,24 @@ int main() {
 
     //Run the motor synchronisation
     orState = motorHome();
+    //motorHome里面会有一次motorOut把motor每次reset之后都放在“state0”里面，
+    //每个motor的“state0“都不同，我们的是4，
+    //wait两秒等motor到达它的位置，否则会直接走interrupt然后motor就一直转了
+
     pc.printf("Rotor origin: %x\n\r",orState);
     //orState is subtracted from future rotor state inputs to align rotor and motor states
+    CheckState();
+    //motor到了位置之后，走interrupt
 
     //MotorPWM.pulsewidth_us(PWM_PRD/2);
     //Poll the rotor state and set the motor outputs accordingly to spin the motor
 
-    timing.attach(&CountHash, 10.0);
+    timing.attach(&CountHash, 1.0);
     position.attach (&posprint,2);
 
-    CheckState();
     //compute_thread.start(callback(compute));
     print_thread.start(callback(myprint));
-    //decode_thread.start(callback(decode));
+    decode_thread.start(callback(decode));
     motorCtrlT.start(callback(motorCtrlFn));
     
     while (1) {
@@ -583,7 +590,6 @@ int main() {
         compute();
         *nonce = *nonce + 1;
         hash_counter = hash_counter + 1;
-        decode(); 
     }
 }
 
