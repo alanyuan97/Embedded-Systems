@@ -144,11 +144,9 @@ float p_Er = 0;
 const float kpr=0.4;
 const float kdr=0.01;
 
-float Es = 0; 
-float d_Es = 0;
-float p_Es = 0;
+float Es = 0;
 float integral_Es = 0; 
-const float kps=0.2;
+const float kps=0.005;
 const float kis=0.005;
 const float integral_Es_Max = 800.0;
 
@@ -191,7 +189,7 @@ void pos_control(){
     }
     else{
         if (target_rot <= 0){
-            lead = -2;   
+            lead = -2;  
         }
         else{
             lead = 2;   
@@ -229,21 +227,17 @@ void vel_control(){
             target_vel = abs(target_vel);
         }
 
-        Es = target_vel - current_velocity;
+        Es = target_vel - abs(current_velocity);
 
-        d_Es = Es - p_Es;
+        integral_Es = integral_Es + Es * 0.1; 
 
-        integral_Es = d_Es * 0.1; 
-
-        if(integral_Es > 800){
+        if(integral_Es > integral_Es_Max){
             integral_Es = 800;
         }
-        if(integral_Es < -800){
+        if(integral_Es < -integral_Es_Max){
             integral_Es = 800;
         }
         y_velocity = (kps*Es+kis*integral_Es);
- 
-        p_Es = Es;
 
         if(y_velocity < 0){
             lead = -1*lead; 
@@ -287,8 +281,9 @@ void motorCtrlFn(){
 
         pos_control();
         vel_control();
-        //pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
-       if(val_enter && !vel_enter){
+
+        pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
+        if(val_enter && !vel_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
             //每次input新的rotation之前都drive一遍motor
             MotorPWM.write(y_rotation);
@@ -507,6 +502,7 @@ void decode(){
                 case('V'):
                     vel_enter = true; 
                     sscanf(infobuffer,"V%f",&target_vel);
+                    integral_Es=0;
                     // dump the target TODO
                     break;
                     // Rotation numbers
