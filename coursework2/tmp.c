@@ -141,13 +141,13 @@ float tmp_rot = 0;
 float Er = 0; 
 float d_Er = 0;
 float p_Er = 0;
-const float kpr=0.4;
-const float kdr=0.008;
+const float kpr=0.006;
+const float kdr=0.02;
 
 float Es = 0;
 float integral_Es = 0; 
-const float kps=0.1;
-const float kis=0.005;
+const float kps=0.05;
+const float kis=0.00095;
 const float integral_Es_Max = 800.0;
 
 //Convert photointerrupter inputs to a rotor state
@@ -220,7 +220,7 @@ void vel_control(){
 
         Es = abs(target_vel) - abs(current_velocity);
 
-        integral_Es = integral_Es + Es * 0.1; 
+        integral_Es = integral_Es + Es / 0.1; 
 
         if(integral_Es > integral_Es_Max){
             integral_Es = 800;
@@ -263,6 +263,7 @@ void motorCtrlFn(){
     int32_t vel_counter=0;
     Timer test;
     float exe_time;
+    float avg=0;
 
     while(1){
         motorCtrlT.signal_wait(0x1); // wait for thread signal
@@ -274,8 +275,9 @@ void motorCtrlFn(){
 
         pos_control();
         vel_control();
-
-        pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
+        avg=avg+current_velocity; 
+        
+         pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
         if(val_enter && !vel_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
             //每次input新的rotation之前都drive一遍motor
@@ -287,12 +289,48 @@ void motorCtrlFn(){
         else if(vel_enter && val_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
             //always take the minimum
-            if(y_velocity<y_rotation){
-                    MotorPWM.write(y_velocity);
+
+            // if(y_velocity<y_rotation){
+            //         MotorPWM.write(y_velocity);
+            // }
+            // else{
+            //         MotorPWM.write(y_rotation);
+            // }
+            if(Er >= 0){
+                if(y_velocity>y_rotation){
+                     if (y_rotation < 0.5 && Er < 6) { // stop early and avoid undershooting
+                        MotorPWM.write(0.5f);
+                    }
+                    else{
+                        MotorPWM.write(y_rotation);
+                    }
+
+                    if ((abs(p_Er) <= 0.5) && (p_Er == Er)) {
+                        MotorPWM.write(0);
+                    }
+                }
+                else{
+                        MotorPWM.write(y_velocity);
+                }
             }
             else{
-                    MotorPWM.write(y_rotation);
+                if(y_velocity<y_rotation){
+                    if (y_rotation < 0.5) { // avoid overshooting
+                        MotorPWM.write(0.5f);
+                    }
+                    else{
+                        MotorPWM.write(y_rotation);
+                    }
+
+                    if ((abs(p_Er) <= 0.5) && (p_Er == Er)) {
+                        MotorPWM.write(0);
+                    }
+                }
+                else{
+                        MotorPWM.write(y_velocity);
+                }
             }
+
             // test.stop();
             // exe_time = test.read();
             // pc.printf("Execution time: %f\n\r",exe_time);
@@ -313,10 +351,11 @@ void motorCtrlFn(){
 
         if (vel_counter == 9){
             message *mail = mail_box.alloc();
-            mail->velocity = current_velocity;
+            mail->velocity = avg/10;
             mail->typenames = 4;
             mail_box.put(mail);
             vel_counter = 0;
+            avg = 0; 
             }
     }
 }
@@ -384,7 +423,7 @@ void myprint(){
 //                    pc.printf("\n Position: %d\n\r", mail->data);
                     break;
                 case(4):
-//                    pc.printf("\n Velocity: %f\n\r", mail->velocity);
+//                   pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
                 case(5):
 //                    pc.printf("\n key found: %llx\n\r", mail->key);
@@ -583,3 +622,4 @@ int main() {
     }
     // measurement();
 }
+
