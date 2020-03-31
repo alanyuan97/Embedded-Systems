@@ -141,13 +141,13 @@ float tmp_rot = 0;
 float Er = 0; 
 float d_Er = 0;
 float p_Er = 0;
-const float kpr=0.01;
-const float kdr=0.05;
+const float kpr=0.4;
+const float kdr=0.008;
 
 float Es = 0;
 float integral_Es = 0; 
-const float kps=0.01;
-const float kis=0.0035;
+const float kps=0.1;
+const float kis=0.005;
 const float integral_Es_Max = 800.0;
 
 //Convert photointerrupter inputs to a rotor state
@@ -202,7 +202,7 @@ void pos_control(){
 
         if(y_rotation < 0){
             lead = -1*lead; 
-            y_rotation = 0;
+            y_rotation = -y_rotation; 
             }
         
         if(y_rotation>YVELMAX){
@@ -231,8 +231,7 @@ void vel_control(){
         y_velocity = (kps*Es+kis*integral_Es);
 
         if(y_velocity < 0){
-            lead = -1*lead; 
-            y_velocity = abs(y_velocity);
+            y_velocity = 0;
         }
 
         if(y_velocity>YVELMAX){
@@ -584,4 +583,3 @@ int main() {
     }
     // measurement();
 }
-
