@@ -298,7 +298,7 @@ void motorCtrlFn(){
             // }
             if(Er >= 0){
                 if(y_velocity>y_rotation){
-                     if (y_rotation < 0.5 && Er < 6) { // stop early and avoid undershooting
+                     if (y_rotation < 0.5) { // stop early and avoid undershooting
                         MotorPWM.write(0.5f);
                     }
                     else{
