@@ -141,13 +141,13 @@ float tmp_rot = 0;
 float Er = 0; 
 float d_Er = 0;
 float p_Er = 0;
-const float kpr=0.4;
-const float kdr=0.01;
+const float kpr=0.01;
+const float kdr=0.05;
 
 float Es = 0;
 float integral_Es = 0; 
-const float kps=0.005;
-const float kis=0.005;
+const float kps=0.01;
+const float kis=0.0035;
 const float integral_Es_Max = 800.0;
 
 //Convert photointerrupter inputs to a rotor state
@@ -202,7 +202,6 @@ void pos_control(){
 
         if(y_rotation < 0){
             lead = -1*lead; 
-            //y_rotation = abs(y_rotation);
             y_rotation = 0;
             }
         
@@ -218,16 +217,8 @@ void vel_control(){
         y_velocity = 0;
     }
     else{
-        target_vel = abs(target_vel);
 
-        if(current_velocity<0){
-            target_vel = -1*abs(target_vel);
-        }
-        else{
-            target_vel = abs(target_vel);
-        }
-
-        Es = target_vel - abs(current_velocity);
+        Es = abs(target_vel) - abs(current_velocity);
 
         integral_Es = integral_Es + Es * 0.1; 
 
@@ -235,7 +226,7 @@ void vel_control(){
             integral_Es = 800;
         }
         if(integral_Es < -integral_Es_Max){
-            integral_Es = 800;
+            integral_Es = -800;
         }
         y_velocity = (kps*Es+kis*integral_Es);
 
@@ -271,9 +262,12 @@ void motorCtrlFn(){
     old_rot=0;
     new_rot=0;
     int32_t vel_counter=0;
+    Timer test;
+    float exe_time;
 
     while(1){
         motorCtrlT.signal_wait(0x1); // wait for thread signal
+        // test.start();
         new_rot = (float)motorPosition/6.0;
         current_velocity = (float)(new_rot-old_rot)*10; //100ms per call means 0.1s per call
         old_rot = new_rot;
@@ -293,30 +287,30 @@ void motorCtrlFn(){
         // }
         else if(vel_enter && val_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
-            //if(current_velocity < 0){
-            //     if(y_velocity>y_rotation){
-            //          MotorPWM.write(y_velocity);
-            //     }
-            //     else{
-            //          MotorPWM.write(y_rotation);
-            //     }
-            // }
-            //else{
-                if(y_velocity<y_rotation){
-                     MotorPWM.write(y_velocity);
-                }
-                else{
-                     MotorPWM.write(y_rotation);
-                }
-            //}
+            //always take the minimum
+            if(y_velocity<y_rotation){
+                    MotorPWM.write(y_velocity);
+            }
+            else{
+                    MotorPWM.write(y_rotation);
+            }
+            // test.stop();
+            // exe_time = test.read();
+            // pc.printf("Execution time: %f\n\r",exe_time);
+            // test.reset();
         }
 
-        else if (tune_enter){
+        if (tune_enter){
+            // test.start();
             tune_idx = 0;
             newtune_mutex.lock();
             melody_tune_control();
             newtune_mutex.unlock();
-        }
+            // test.stop();
+            // exe_time = test.read();
+            // pc.printf("Execution time: %f\n\r",exe_time);
+            // test.reset();
+            }
 
         if (vel_counter == 9){
             message *mail = mail_box.alloc();
@@ -334,8 +328,6 @@ int8_t motorHome(){
     //Put the motor in drive state 0 and wait for it to stabilise
     motorOut(0);
     wait(2.0);
-
-    //Get the rotor state
     return readRotorState();
 }
 
@@ -382,26 +374,23 @@ void myprint(){
             switch(mail->typenames){
                 // Type 1: Found Hash, Print nonce
                 case(1):
-                    pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
+//                    pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
                     break;
                 // Type 2: Hash rate    
                 case(2):
-                    pc.printf("\n Hash-rate: %d\n\r", mail->data);
+//                    pc.printf("\n Hash-rate: %d\n\r", mail->data);
                     break;
                 // Type 3: Abs positon of rotor 
                 case(3):
-                    pc.printf("\n Position: %d\n\r", mail->data);
+//                    pc.printf("\n Position: %d\n\r", mail->data);
                     break;
                 case(4):
-                    pc.printf("\n Velocity: %f\n\r", mail->velocity);
+//                    pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
                 case(5):
-                    pc.printf("\n key found: %llx\n\r", mail->key);
+//                    pc.printf("\n key found: %llx\n\r", mail->key);
                     break;
             }
-            // pc.printf("\ntype: 0x%d\n\r", mail->typenames);
-            // pc.printf("\ndata: 0x%d\n\r", mail->data);
-
         mail_box.free(mail);
         }
     }
@@ -531,26 +520,35 @@ void decode(){
     }
 }
 
-void posprint (){
+void posprint(){
         message *mail = mail_box.alloc();
         mail->data = motorPosition;
         mail->typenames = 3;
         mail_box.put(mail);
 }
 
+// void measurement(){
+//     Timer test;
+//     float exe_time;
+//     test.start();
+//     float start=test.read();
+//     for(int i=0; i<4999; i++){
+//         compute(); 
+//         *nonce = *nonce + 1;
+//         hash_counter = hash_counter + 1;
+//     }
+//     exe_time = test.read()-start;
+//     pc.printf("Execution time: %f\n\r",exe_time);
+// }
+
+
 //Main
 int main() {
-    // int8_t orState = 0;    //Rotot offset at motor state 0
-    // int8_t intState = 0;
-    // int8_t intStateOld = 0;
 
     Ticker timing;
     Ticker position;
     MotorPWM.period(0.002f);
     MotorPWM.write(1.0f); //设置motor为最快转速  
-    // const int32_t PWM_PRD = 2000;
-    // MotorPWM.period_us(PWM_PRD);
-    // MotorPWM.pulsewidth_us(PWM_PRD);
 
     //Initialise the serial port
     pc.printf("Hello\n\r");
@@ -562,12 +560,9 @@ int main() {
     //wait两秒等motor到达它的位置，否则会直接走interrupt然后motor就一直转了
 
     pc.printf("Rotor origin: %x\n\r",orState);
-    //orState is subtracted from future rotor state inputs to align rotor and motor states
+
     CheckState();
     //motor到了位置之后，走interrupt
-
-    //MotorPWM.pulsewidth_us(PWM_PRD/2);
-    //Poll the rotor state and set the motor outputs accordingly to spin the motor
 
     timing.attach(&CountHash, 1.0);
     position.attach (&posprint,2);
@@ -587,5 +582,6 @@ int main() {
         *nonce = *nonce + 1;
         hash_counter = hash_counter + 1;
     }
+    // measurement();
 }
 
