@@ -277,7 +277,7 @@ void motorCtrlFn(){
         vel_control();
         avg=avg+current_velocity; 
         
-         pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
+        //  pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
         if(val_enter && !vel_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
             //每次input新的rotation之前都drive一遍motor
@@ -412,21 +412,21 @@ void myprint(){
             switch(mail->typenames){
                 // Type 1: Found Hash, Print nonce
                 case(1):
-//                    pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
+                   pc.printf("\n Found Hash_nonce: 0x%x\n\r", mail->data);
                     break;
                 // Type 2: Hash rate    
                 case(2):
-//                    pc.printf("\n Hash-rate: %d\n\r", mail->data);
+                   pc.printf("\n Hash-rate: %d\n\r", mail->data);
                     break;
                 // Type 3: Abs positon of rotor 
                 case(3):
-//                    pc.printf("\n Position: %d\n\r", mail->data);
+                   pc.printf("\n Position: %d\n\r", mail->data);
                     break;
                 case(4):
-//                   pc.printf("\n Velocity: %f\n\r", mail->velocity);
+                  pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
                 case(5):
-//                    pc.printf("\n key found: %llx\n\r", mail->key);
+                   pc.printf("\n key found: %llx\n\r", mail->key);
                     break;
             }
         mail_box.free(mail);
