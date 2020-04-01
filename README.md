@@ -15,4 +15,6 @@ Link to website: https://viannananac.wixsite.com/fat-duck
 
 Final Submission code:
 
-[Final Submission](./coursework2/submission.c)
+[Final Code](./coursework2/submission.c)
+
+[Final Report](./coursework2/Embedded_Final_Report_F.pdf)
