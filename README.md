@@ -10,3 +10,10 @@ Final Submission code:
 [LEGO Arm](./coursework1/src/lego_sub.py)
 
 Link to website: https://viannananac.wixsite.com/fat-duck
+
+## Coursework2: Multi-thread C coding on Mbed
+
+Final Submission code:
+
+[Final Submission](./coursework2/Notes/tmp.c)
+
