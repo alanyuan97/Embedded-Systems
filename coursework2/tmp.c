@@ -351,7 +351,7 @@ void motorCtrlFn(){
 
         if (vel_counter == 9){
             message *mail = mail_box.alloc();
-            mail->velocity = avg/10;
+            mail->velocity = avg/9;
             mail->typenames = 4;
             mail_box.put(mail);
             vel_counter = 0;
