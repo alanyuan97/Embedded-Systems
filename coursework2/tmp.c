@@ -150,7 +150,6 @@ const float kps=0.05;
 const float kis=0.00095;
 const float integral_Es_Max = 800.0;
 
-//Convert photointerrupter inputs to a rotor state
 inline int8_t readRotorState(){
     return stateMap[I1 + 2*I2 + 4*I3];
 }
@@ -159,10 +158,8 @@ inline int8_t readRotorState(){
 //Set a given drive state
 void motorOut(int8_t driveState){
 
-    //Lookup the output byte from the drive state.
     int8_t driveOut = driveTable[driveState & 0x07];
     
-
     //Turn off first
     if (~driveOut & 0x01) L1L = 0;
     if (~driveOut & 0x02) L1H = 1;
@@ -179,8 +176,6 @@ void motorOut(int8_t driveState){
     if (driveOut & 0x10) L3L=1;
     if (driveOut & 0x20) L3H = 0;
 }
-
-
 
 void pos_control(){ 
 
@@ -254,7 +249,6 @@ void melody_tune_control(){
     }
 }
 
-
 void motorCtrlFn(){
     Ticker motorCtrlTicker; 
     motorCtrlTicker.attach_us(&motorCtrlTick,100000); 
@@ -280,7 +274,6 @@ void motorCtrlFn(){
         //  pc.printf("current velocity %f, Er %f, y velocity %f, y rotation %f\n\r", current_velocity, Er, y_velocity, y_rotation);
         if(val_enter && !vel_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
-            //每次input新的rotation之前都drive一遍motor
             MotorPWM.write(y_rotation);
         }
         // else if(vel_enter && !val_enter){
@@ -288,14 +281,7 @@ void motorCtrlFn(){
         // }
         else if(vel_enter && val_enter){
             motorOut((readRotorState()-orState+lead+6)%6);
-            //always take the minimum
-
-            // if(y_velocity<y_rotation){
-            //         MotorPWM.write(y_velocity);
-            // }
-            // else{
-            //         MotorPWM.write(y_rotation);
-            // }
+            
             if(Er >= 0){
                 if(y_velocity>y_rotation){
                      if (y_rotation < 0.5) { // stop early and avoid undershooting
@@ -360,15 +346,12 @@ void motorCtrlFn(){
     }
 }
 
-
-//Basic synchronisation routine
 int8_t motorHome(){
     //Put the motor in drive state 0 and wait for it to stabilise
     motorOut(0);
     wait(2.0);
     return readRotorState();
 }
-
 
 // ISR to handle the updating of the motor position
 void motorISR(){
@@ -422,9 +405,11 @@ void myprint(){
                 case(3):
                    pc.printf("\n Position: %d\n\r", mail->data);
                     break;
+                // Type 4: Current velocity
                 case(4):
                   pc.printf("\n Velocity: %f\n\r", mail->velocity);
                     break;
+                // Type 5: Key found
                 case(5):
                    pc.printf("\n key found: %llx\n\r", mail->key);
                     break;
@@ -433,8 +418,6 @@ void myprint(){
         }
     }
 }
-
-
 
 void compute(){
     uint8_t hash1[32];
@@ -530,16 +513,13 @@ void decode(){
                     vel_enter = true; 
                     sscanf(infobuffer,"V%f",&target_vel);
                     integral_Es=0;
-                    // dump the target TODO
                     break;
-                    // Rotation numbers
                 case('R'):
                     newkey_mutex.lock(); 
                     val_enter = true; 
                     sscanf(infobuffer,"R%f",&target_rot);
                     tmp_rot = (float)motorPosition/6; 
                     newkey_mutex.unlock(); 
-                    // dump the target TODO
                     break;
                 case('T'):
                     tune_enter = true;
@@ -548,8 +528,6 @@ void decode(){
                     newtune_mutex.unlock();
                     break;
                 default:
-                    // Do nothing
-                    // clear_buffer();
                     break;
             }
             counter = 0;
@@ -586,21 +564,15 @@ int main() {
     Ticker timing;
     Ticker position;
     MotorPWM.period(0.002f);
-    MotorPWM.write(1.0f); //设置motor为最快转速  
-
+    MotorPWM.write(1.0f); 
     //Initialise the serial port
     pc.printf("Hello\n\r");
 
-    //Run the motor synchronisation
     orState = motorHome();
-    //motorHome里面会有一次motorOut把motor每次reset之后都放在“state0”里面，
-    //每个motor的“state0“都不同，我们的是4，
-    //wait两秒等motor到达它的位置，否则会直接走interrupt然后motor就一直转了
 
     pc.printf("Rotor origin: %x\n\r",orState);
 
     CheckState();
-    //motor到了位置之后，走interrupt
 
     timing.attach(&CountHash, 1.0);
     position.attach (&posprint,2);
